@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 processor/dbx.py:*)",
+      "Bash(python3 ./processor/dbx.py:*)",
+      "Bash(python3 /home/user/case-notes/processor/dbx.py:*)",
+      "Bash(mktemp:*)"
+    ]
+  }
+}
