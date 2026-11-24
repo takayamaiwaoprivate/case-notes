@@ -424,9 +424,10 @@
     "会務": { prefix: "B", label: "名称（委員会・会議名）", example: "刑事弁護委員会" },
     "執筆": { prefix: "C", label: "名称（原稿・書籍・論文名）", example: "季刊刑事弁護 原稿" },
     "研修準備": { prefix: "D", label: "名称（研修名）", example: "新人弁護士向け 接見研修" },
+    "大学講義準備": { prefix: "E", label: "名称（大学・科目名）", example: "○○大学 刑事訴訟法" },
   };
   function nextCaseId(kind) {
-    // 事務所の番号（例: A000, A001）があれば、その続きを提案する。会務は B001、執筆は C001、研修準備は D001 から
+    // 事務所の番号（例: A000, A001）があれば、その続きを提案する。会務は B001、執筆は C001、研修準備は D001、大学講義準備は E001 から
     const pre = OTHER_KINDS[kind] && OTHER_KINDS[kind].prefix;
     if (pre) {
       const re = new RegExp(`^${pre}(\\d+)$`);
@@ -434,7 +435,7 @@
       return pre + String(n + 1).padStart(3, "0");
     }
     let best = null;
-    for (const c of cases.filter((x) => !/^[BCD]\d+$/.test(x.id))) {
+    for (const c of cases.filter((x) => !/^[BCDE]\d+$/.test(x.id))) {
       const m = String(c.id).match(/^([A-Za-z]+)(\d+)$/);
       if (m && (!best || parseInt(m[2], 10) > best.n)) best = { p: m[1], n: parseInt(m[2], 10), w: m[2].length };
     }
