@@ -524,9 +524,21 @@
     const t = store.get("lastSync", null);
     return t ? `<p class="muted small">最終同期 ${new Date(t).toLocaleString("ja-JP")}</p>` : "";
   }
+  // 期日の欄では、裁判所の期日（打合せ期日・弁論準備期日・公判前整理手続期日など）を太字にする。
+  // 定時整理が太字を付け忘れた行も、ここで太字になる。すでに ** がある行はそのまま。
+  const COURT_DATE = /(?<![\p{sc=Hiragana}\d])(?:打ち?合わ?せ|[\p{sc=Han}\p{sc=Katakana}ー・])*期日(?!候補|前|後|まで|の?確認)/gu;
+  function boldCourtDates(src) {
+    let inDates = false;
+    return src.replace(/\r/g, "").split("\n").map((l) => {
+      const h = l.match(/^#{1,4}\s+(.*)/);
+      if (h) { inDates = /期日/.test(h[1]) && !/期限|宿題/.test(h[1]); return l; }
+      if (!inDates || l.includes("**") || /^\s*\|[\s\-:|]+\|\s*$/.test(l)) return l;
+      return l.replace(COURT_DATE, (m) => `**${m}**`);
+    }).join("\n");
+  }
   function renderDashboard() {
     const d = store.get("md:dashboard", null);
-    $("dashboard").innerHTML = d ? md(d) + syncNote() : '<p class="muted">同期するとダッシュボードが表示されます。</p>';
+    $("dashboard").innerHTML = d ? md(boldCourtDates(d)) + syncNote() : '<p class="muted">同期するとダッシュボードが表示されます。</p>';
     linkAsks($("dashboard"));
   }
   const NOTE_ORDER = ["接見", "依頼者との打合せ", "会議メモ", "期日メモ", "裁判所打合せ", "検察官とのやりとり", "面談", "電話", "検討メモ", "その他"];
