@@ -47,6 +47,7 @@
           <option value="自動判定">種類：自動判定</option>
           <option value="接見">接見</option>
           <option value="依頼者との打合せ">依頼者との打合せ</option>
+          <option value="会議メモ">会議メモ（会務）</option>
           <option value="期日メモ">期日メモ（公判・弁論準備など）</option>
           <option value="裁判所打合せ">裁判所打合せ</option>
           <option value="検察官とのやりとり">検察官とのやりとり</option>
@@ -94,12 +95,15 @@
 <dialog id="newCaseDialog">
   <form method="dialog" id="newCaseForm">
     <h2>新規案件</h2>
+    <label>区分
+      <select name="kind" id="caseKind"><option value="事件">事件（依頼者あり）</option><option value="会務">会務（委員会・会議など）</option></select>
+    </label>
     <label>案件番号<input name="caseId" required pattern="[0-9A-Za-z\-]+" placeholder="A001"></label>
-    <label>依頼者名<input name="client" required placeholder="山田太郎"></label>
-    <label>イニシャル（任意）<input name="initials" maxlength="6" placeholder="YT"></label>
-    <label>罪名<input name="crime" placeholder="窃盗"></label>
-    <label>身柄
-      <select name="custody"><option>勾留中</option><option>逮捕中</option><option>在宅</option><option>保釈中</option><option>その他</option></select>
+    <label><span id="clientLabel">依頼者名</span><input name="client" required placeholder="山田太郎"></label>
+    <label class="jiken">イニシャル（任意）<input name="initials" maxlength="6" placeholder="YT"></label>
+    <label class="jiken">罪名・事件の種類<input name="crime" placeholder="窃盗"></label>
+    <label class="jiken">身柄
+      <select name="custody"><option>勾留中</option><option>逮捕中</option><option>在宅</option><option>保釈中</option><option>その他</option><option value="">（なし）</option></select>
     </label>
     <p class="muted small">詳しい情報はメモに書けばClaudeが案件カードに整理します。</p>
     <menu><button value="cancel" type="button" class="ghost" id="cancelNewCase">やめる</button><button value="ok" class="primary">作成</button></menu>
