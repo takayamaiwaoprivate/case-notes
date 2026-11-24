@@ -464,6 +464,7 @@
     hidden.updated = Date.now(); hidden.dirty = true;
     store.set("hidden", hidden);
     selectCase(current);
+    renderDashboard();
     alertBox(on ? "終了にして一覧から隠しました（削除はしていません）。" : "一覧に戻しました。");
     await pushHidden();
   }
@@ -571,9 +572,18 @@
       return l.replace(COURT_DATE, (m) => `**${m}**`);
     }).join("\n");
   }
+  // 終了（非表示）にした案件の行をダッシュボードから省く。
+  // 定時整理の前に非表示にした案件も、その場で消えるようにアプリ側でも省く。見出しは残す。
+  function dropHiddenCases(src) {
+    if (!hidden.ids.length) return src;
+    const ids = hidden.ids.filter((id) => id !== GENERAL.id).map((id) => id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    if (!ids.length) return src;
+    const re = new RegExp(`(?<![0-9A-Za-z])(?:${ids.join("|")})(?![0-9A-Za-z])`);
+    return src.replace(/\r/g, "").split("\n").filter((l) => /^#{1,4}\s/.test(l) || !re.test(l)).join("\n");
+  }
   function renderDashboard() {
     const d = store.get("md:dashboard", null);
-    $("dashboard").innerHTML = d ? md(boldCourtDates(d)) + syncNote() : '<p class="muted">同期するとダッシュボードが表示されます。</p>';
+    $("dashboard").innerHTML = d ? md(boldCourtDates(dropHiddenCases(d))) + syncNote() : '<p class="muted">同期するとダッシュボードが表示されます。</p>';
     linkAsks($("dashboard"));
   }
   const NOTE_ORDER = ["接見", "依頼者との打合せ", "会議メモ", "期日メモ", "裁判所打合せ", "検察官とのやりとり", "面談", "電話", "検討メモ", "その他"];
