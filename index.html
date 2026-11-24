@@ -24,6 +24,7 @@
   <button role="tab" data-view="input" aria-selected="true">入力</button>
   <button role="tab" data-view="home">ホーム</button>
   <button role="tab" data-view="case">案件</button>
+  <button role="tab" data-view="sent">送信済み</button>
 </nav>
 
 <main>
@@ -74,6 +75,17 @@
 
   <section id="view-case" class="view" hidden>
     <article id="caseCard" class="md"><p class="muted">入力タブで案件を選ぶと、ここに案件カードが表示されます。</p></article>
+  </section>
+  <section id="view-sent" class="view" hidden>
+    <article class="md">
+      <div class="sent-head">
+        <label class="small"><input type="checkbox" id="sentThisCase"> 選択中の案件だけ</label>
+        <button type="button" id="loadSent" class="ghost small">Dropboxから更新</button>
+        <span id="sentState" class="muted small"></span>
+      </div>
+      <p class="muted small">送ったメモの控えです。「未整理」はClaudeの整理待ち、「整理済み」は案件カードに反映済みです。他の端末から送ったものは、開くと本文を読み込みます。</p>
+      <div id="sentList"></div>
+    </article>
   </section>
 </main>
 

@@ -1,3 +1,4 @@
+[hidden] { display: none !important; }
 :root {
   --bg: #f7f6f2; --surface: #ffffff; --ink: #1f2328; --muted: #5f6670;
   --line: #dcd9d0; --accent: #2f4a6d; --accent-ink: #ffffff; --warn: #b3261e; --ok: #2e7d4f;
@@ -61,3 +62,11 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 .tasks ul { margin: 4px 0 8px; padding-left: 1.3em; }
 .tk-h { margin-top: 8px; font-size: 13px; color: var(--muted); }
 .tk-h.warn { color: var(--warn); font-weight: 600; }
+.sent-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.sent { border-bottom: 1px solid var(--line); padding: 6px 0; }
+.sent summary { cursor: pointer; font-size: 14px; }
+.memo-body { white-space: pre-wrap; font: inherit; font-size: 14px; background: var(--bg); padding: 8px 10px; border-radius: 6px; margin: 6px 0 0; }
+.st { font-size: 12px; padding: 1px 6px; border-radius: 99px; border: 1px solid var(--line); }
+.st-送信待ち { color: var(--warn); border-color: var(--warn); }
+.st-未整理 { color: var(--accent); border-color: var(--accent); }
+.st-整理済み { color: var(--ok); border-color: var(--ok); }

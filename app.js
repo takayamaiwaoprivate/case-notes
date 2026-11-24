@@ -82,6 +82,22 @@
     if (!res.ok) throw new Error("upload " + res.status);
   }
 
+  async function dbxList(path) {
+    const call = async (ep, body) => {
+      const res = await fetch("https://api.dropboxapi.com/2/files/" + ep, {
+        method: "POST",
+        headers: { Authorization: "Bearer " + (await accessToken()), "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.status === 409) return { entries: [], has_more: false };
+      if (!res.ok) throw new Error("list " + res.status);
+      return res.json();
+    };
+    let r = await call("list_folder", { path, recursive: true }), out = r.entries;
+    while (r.has_more) { r = await call("list_folder/continue", { cursor: r.cursor }); out = out.concat(r.entries); }
+    return out;
+  }
+
   async function dbxDownload(path) {
     const res = await fetch("https://content.dropboxapi.com/2/files/download", {
       method: "POST",
@@ -97,6 +113,8 @@
   let current = store.get("currentCase", null);
   let outbox = store.get("outbox", []);         // 送信待ちのメモ
   // 終了して非表示にした案件（削除はしない）。Dropboxの /hidden.json で端末間に共有する
+  let sentLog = store.get("sentLog", []);      // この端末から送ったメモの控え
+  let remoteSent = store.get("remoteSent", []);  // Dropbox上の送信済みメモ（全端末分の一覧）
   let hidden = store.get("hidden", { ids: [], updated: 0, dirty: false });
   const isHidden = (id) => hidden.ids.includes(id);
 
@@ -204,8 +222,12 @@
     const d = new Date();
     const text = `---\n案件: ${caseId}\n種類: ${type}\n作成: ${isoLocal(d)}\n端末: ${deviceName()}\n---\n${body.trim()}\n`;
     const safe = caseId.replace(/[^0-9A-Za-z\-]/g, "_");
-    outbox.push({ path: `${INBOX}/${stamp(d)}_${safe}.txt`, text });
+    const path = `${INBOX}/${stamp(d)}_${safe}.txt`;
+    outbox.push({ path, text });
     store.set("outbox", outbox);
+    sentLog.unshift({ name: path.split("/").pop(), caseId, type, at: isoLocal(d), body: body.trim() });
+    sentLog = sentLog.slice(0, 300);
+    store.set("sentLog", sentLog);
   }
 
   async function flushOutbox() {
@@ -218,6 +240,56 @@
       store.set("outbox", outbox);
     }
     renderOutbox();
+  }
+
+  // ---------- 送信済み ----------
+  const parseMemo = (text) => {
+    const m = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+    const head = {}; if (m) for (const l of m[1].split("\n")) { const i = l.indexOf(":"); if (i > 0) head[l.slice(0, i).trim()] = l.slice(i + 1).trim(); }
+    return { head, body: m ? m[2] : text };
+  };
+
+  const fmtAt = (at) => { if (!at) return ""; const d = new Date(at.replace(" ", "T")); return isNaN(d) ? at : `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+
+  async function loadRemoteSent() {
+    $("sentState").textContent = "Dropboxから読み込み中…";
+    try {
+      const inbox = (await dbxList(INBOX)).filter((e) => e[".tag"] === "file");
+      const done = (await dbxList("/案件")).filter((e) => e[".tag"] === "file" && /\/メモ原本\//.test(e.path_display));
+      remoteSent = inbox.map((e) => ({ name: e.name, path: e.path_display, state: "未整理" }))
+        .concat(done.map((e) => ({ name: e.name, path: e.path_display, state: "整理済み" })));
+      store.set("remoteSent", remoteSent);
+      $("sentState").textContent = "";
+    } catch { $("sentState").textContent = "読み込めませんでした。オンラインか、Dropboxに接続しているか確認してください。"; }
+    renderSent();
+  }
+
+  function renderSent() {
+    const onlyCase = $("sentThisCase").checked && current;
+    const pendingNames = new Set(outbox.map((o) => o.path.split("/").pop()));
+    const remote = new Map(remoteSent.map((r) => [r.name, r]));
+    const rows = new Map();
+    for (const l of sentLog) rows.set(l.name, { ...l, state: pendingNames.has(l.name) ? "送信待ち" : (remote.get(l.name)?.state || "送信済み") });
+    for (const r of remoteSent) if (!rows.has(r.name)) {
+      const m = r.name.match(/^(\d{8})-(\d{2})(\d{2})\d{2}_(.+)\.txt$/);
+      rows.set(r.name, { name: r.name, path: r.path, state: r.state, caseId: m ? m[4] : "", at: m ? `${m[1].slice(0,4)}-${m[1].slice(4,6)}-${m[1].slice(6)} ${m[2]}:${m[3]}` : "", type: "", body: null });
+    }
+    let list = [...rows.values()].sort((a, b) => (b.name > a.name ? 1 : -1));
+    if (onlyCase) list = list.filter((x) => x.caseId === current.replace(/[^0-9A-Za-z\-]/g, "_") || x.caseId === current);
+    const box = $("sentList"); box.innerHTML = "";
+    if (!list.length) { box.innerHTML = '<p class="muted small">まだありません。</p>'; return; }
+    for (const x of list.slice(0, 200)) {
+      const c = cases.find((k) => k.id === x.caseId);
+      const d = document.createElement("details"); d.className = "sent";
+      d.innerHTML = `<summary><span class="st st-${x.state}">${esc(x.state)}</span> ${esc(fmtAt(x.at))}　${esc(c ? caseLabel(c) : x.caseId || "")}　<span class="muted">${esc(x.type || "")}</span></summary><pre class="memo-body">${x.body != null ? esc(x.body) : "（開くと読み込みます）"}</pre>`;
+      if (x.body == null && x.path) d.addEventListener("toggle", async () => {
+        if (!d.open || d.dataset.loaded) return;
+        try { const t = await dbxDownload(x.path); const p = parseMemo(t || ""); d.dataset.loaded = "1";
+          d.querySelector("pre").textContent = p.body; if (p.head["種類"]) d.querySelector("summary .muted").textContent = p.head["種類"];
+        } catch { d.querySelector("pre").textContent = "読み込めませんでした（オフラインかもしれません）。"; }
+      });
+      box.append(d);
+    }
   }
 
   function renderOutbox() {
@@ -389,12 +461,15 @@
     for (const b of document.querySelectorAll(".tabs button")) b.setAttribute("aria-selected", String(b.dataset.view === v));
     for (const s of document.querySelectorAll(".view")) s.hidden = s.id !== "view-" + v;
     store.set("view", v);
+    if (v === "sent") { renderSent(); if (navigator.onLine && store.get("auth", null)) loadRemoteSent(); }
   }
 
   // ---------- 起動 ----------
   async function init() {
     for (const b of document.querySelectorAll(".tabs button")) b.addEventListener("click", () => showView(b.dataset.view));
     $("caseFilter").addEventListener("input", renderCases);
+    $("sentThisCase").addEventListener("change", renderSent);
+    $("loadSent").addEventListener("click", loadRemoteSent);
     $("showHidden").addEventListener("change", renderCases);
     $("toggleHidden").addEventListener("click", toggleHidden);
     $("memo").addEventListener("input", () => { updateSendState(); clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 400); });
