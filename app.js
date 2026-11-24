@@ -97,7 +97,7 @@
   let current = store.get("currentCase", null);
   let outbox = store.get("outbox", []);         // 送信待ちのメモ
 
-  const caseLabel = (c) => `${c.id} ${c.initials || ""}${c.crime ? "・" + c.crime : ""}`;
+  const caseLabel = (c) => [c.id, c.initials, c.crime].filter(Boolean).join(" ");
 
   // ---------- 画面: 案件一覧 ----------
   function renderCases() {
