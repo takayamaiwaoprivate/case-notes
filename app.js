@@ -261,6 +261,41 @@
     renderTasks();
   }
 
+  // ---------- 案件タブ: 番号か名前で案件を探して切り替える ----------
+  function renderCasePick() {
+    const q = $("casePick").value.trim().toLowerCase();
+    const list = $("casePickList");
+    list.innerHTML = "";
+    const all = [GENERAL].concat(cases);
+    const hits = all.filter((c) => {
+      if (!q) return !isHidden(c.id);
+      return [c.id, c.client, c.initials, c.crime].filter(Boolean).join(" ").toLowerCase().includes(q);
+    }).slice(0, 30);
+    if (!hits.length) {
+      const li = document.createElement("li"); li.className = "muted small"; li.textContent = "該当する案件はありません";
+      list.append(li);
+    }
+    for (const c of hits) {
+      const li = document.createElement("li");
+      const b = document.createElement("button");
+      b.type = "button";
+      b.setAttribute("aria-current", String(current === c.id));
+      b.textContent = c.general ? "✉ " + GENERAL.client : caseLabel(c);
+      if (!c.general && isHidden(c.id)) { const sub = document.createElement("span"); sub.className = "sub"; sub.textContent = "【終了・非表示】"; b.append(sub); }
+      // フォーカスが外れる前に選べるよう mousedown で拾う
+      b.addEventListener("mousedown", (e) => e.preventDefault());
+      b.addEventListener("click", () => pickCase(c.id));
+      li.append(b); list.append(li);
+    }
+    list.hidden = false;
+  }
+  function pickCase(id) {
+    selectCase(id);
+    $("casePick").value = "";
+    $("casePickList").hidden = true;
+    $("casePick").blur();
+  }
+
   const MEMO_PLACEHOLDER = document.getElementById("memo").placeholder;
 
   // ---------- 下書き（打つたびに端末へ保存） ----------
@@ -554,7 +589,7 @@
         : `<h1>${esc(GENERAL.client)}</h1><p class="muted">まだ記録がありません。お知らせを送ると、次回の定時処理でClaudeが読み、ここに受け取った内容と対応を書きます。</p>`;
       return;
     }
-    if (!c) { tabs.innerHTML = ""; $("caseCard").innerHTML = '<p class="muted">入力タブで案件を選ぶと、ここに案件カードが表示されます。</p>'; return; }
+    if (!c) { tabs.innerHTML = ""; $("caseCard").innerHTML = '<p class="muted">上の欄に案件番号か名前を入れて、案件を選んでください。</p>'; return; }
     const folder = c.folder || c.id;
     const kinds = (store.get("noteIndex", {})[folder] || []).slice().sort((a, b) => NOTE_ORDER.indexOf(a) - NOTE_ORDER.indexOf(b));
     if (caseSub !== "card" && !kinds.includes(caseSub)) caseSub = "card";
@@ -604,6 +639,13 @@
   async function init() {
     for (const b of document.querySelectorAll(".tabs button")) b.addEventListener("click", () => showView(b.dataset.view));
     $("caseFilter").addEventListener("input", renderCases);
+    $("casePick").addEventListener("input", renderCasePick);
+    $("casePick").addEventListener("focus", renderCasePick);
+    $("casePick").addEventListener("blur", () => { $("casePickList").hidden = true; });
+    $("casePick").addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { $("casePickList").hidden = true; $("casePick").blur(); }
+      if (e.key === "Enter") { const b = $("casePickList").querySelector("button"); if (b) b.click(); }
+    });
     $("sentThisCase").addEventListener("change", renderSent);
     $("loadSent").addEventListener("click", loadRemoteSent);
     $("showHidden").addEventListener("change", renderCases);

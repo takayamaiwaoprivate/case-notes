@@ -76,8 +76,12 @@
   </section>
 
   <section id="view-case" class="view" hidden>
+    <div class="case-pick">
+      <input id="casePick" type="search" placeholder="案件番号か名前で探す（例: A012、山田）" aria-label="案件番号か名前で探す" autocomplete="off">
+      <ul id="casePickList" class="case-list pick-list" hidden></ul>
+    </div>
     <div id="caseSubTabs" class="subtabs"></div>
-    <article id="caseCard" class="md"><p class="muted">入力タブで案件を選ぶと、ここに案件カードが表示されます。</p></article>
+    <article id="caseCard" class="md"><p class="muted">上の欄に案件番号か名前を入れて、案件を選んでください。</p></article>
   </section>
   <section id="view-sent" class="view" hidden>
     <article class="md">
