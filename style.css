@@ -75,3 +75,4 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 .subtabs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .md.note p { margin: 0; }
 .md.note h2 { margin-top: 28px; }
+.case-list li button.general { border-left: 3px solid var(--accent); }
