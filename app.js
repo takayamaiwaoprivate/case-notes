@@ -100,6 +100,31 @@
   let hidden = store.get("hidden", { ids: [], updated: 0, dirty: false });
   const isHidden = (id) => hidden.ids.includes(id);
 
+  // 案件カードから宿題（未完了のチェック項目）と確認待ち（【要確認】の行）を取り出す
+  function caseTasks(id) {
+    const card = store.get("md:case:" + id, "") || "";
+    const todo = [], ask = [];
+    for (const l of card.split("\n")) {
+      const m = l.match(/^\s*[-*]\s+\[ \]\s+(.*)/);
+      if (m) todo.push(m[1].trim());
+      else if (l.includes("【要確認】")) ask.push(l.replace(/^\s*[-*]\s+/, "").replace("【要確認】", "").trim());
+    }
+    return { todo, ask };
+  }
+
+  function renderTasks() {
+    const box = $("caseTasks");
+    const c = cases.find((x) => x.id === current);
+    if (!c) { box.hidden = true; return; }
+    const t = caseTasks(c.id);
+    box.hidden = false;
+    const li = (a) => a.map((x) => `<li>${esc(x)}</li>`).join("");
+    box.innerHTML = `<details ${t.todo.length + t.ask.length ? "open" : ""}><summary>この案件の宿題 ${t.todo.length}件・確認待ち ${t.ask.length}件</summary>`
+      + (t.ask.length ? `<div class="tk-h warn">確認待ち（答えは種類「確認待ちへの回答」で）</div><ul>${li(t.ask)}</ul>` : "")
+      + (t.todo.length ? `<div class="tk-h">宿題</div><ul>${li(t.todo)}</ul>` : "")
+      + (t.todo.length + t.ask.length ? "" : `<p class="muted small">今のところありません。</p>`) + `</details>`;
+  }
+
   const caseLabel = (c) => [c.id, c.client || c.initials, c.crime].filter(Boolean).join(" ");
 
   // ---------- 画面: 案件一覧 ----------
@@ -125,7 +150,8 @@
       b.textContent = caseLabel(c);
       const sub = document.createElement("span");
       sub.className = "sub";
-      sub.textContent = [isHidden(c.id) ? "【終了・非表示】" : "", c.custody, c.next ? "次回 " + c.next : "", c.pending ? "（新規・未整理）" : ""].filter(Boolean).join("　");
+      const tk = caseTasks(c.id);
+      sub.textContent = [isHidden(c.id) ? "【終了・非表示】" : "", c.custody, tk.ask.length ? `確認待ち${tk.ask.length}` : "", tk.todo.length ? `宿題${tk.todo.length}` : "", c.next ? "次回 " + c.next : "", c.pending ? "（新規・未整理）" : ""].filter(Boolean).join("　");
       b.append(sub);
       b.addEventListener("click", () => selectCase(c.id));
       li.append(b);
@@ -146,6 +172,7 @@
     updateSendState();
     renderCases();
     renderCaseCard();
+    renderTasks();
   }
 
   // ---------- 下書き（打つたびに端末へ保存） ----------
@@ -292,7 +319,7 @@
       if (String(e.message).includes("not-connected") || String(e.message).includes("refresh")) alertBox("Dropboxへの接続が切れています。設定から接続し直してください。");
     } finally {
       $("sync").disabled = false; $("sync").textContent = "同期";
-      renderCases(); renderDashboard(); renderCaseCard(); setNet();
+      renderCases(); renderDashboard(); renderCaseCard(); renderTasks(); setNet();
     }
   }
 

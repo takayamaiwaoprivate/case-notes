@@ -1,6 +1,6 @@
 // アプリ本体だけを端末に保存し、電波がなくても起動できるようにする。
 // 案件データはここでは扱わない（Dropbox との通信は常にネットワークへ）。
-const VERSION = "cn-v9";
+const VERSION = "cn-v10";
 const SHELL = ["./", "index.html", "style.css", "app.js", "config.js", "manifest.webmanifest", "icons/icon.svg"];
 
 self.addEventListener("install", (e) => {
