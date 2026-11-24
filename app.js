@@ -141,10 +141,55 @@
     const t = caseTasks(c.id);
     box.hidden = false;
     const li = (a) => a.map((x) => `<li>${esc(x)}</li>`).join("");
+    const askLi = t.ask.map((x, i) => `<li><button type="button" class="ask-link" data-i="${i}">${esc(x)}</button></li>`).join("");
     box.innerHTML = `<details ${t.todo.length + t.ask.length ? "open" : ""}><summary>この案件の宿題 ${t.todo.length}件・確認待ち ${t.ask.length}件</summary>`
-      + (t.ask.length ? `<div class="tk-h warn">確認待ち（答えは種類「確認待ちへの回答」で）</div><ul>${li(t.ask)}</ul>` : "")
+      + (t.ask.length ? `<div class="tk-h warn">確認待ち（押すと回答欄を開きます）</div><ul>${askLi}</ul>` : "")
       + (t.todo.length ? `<div class="tk-h">宿題</div><ul>${li(t.todo)}</ul>` : "")
       + (t.todo.length + t.ask.length ? "" : `<p class="muted small">今のところありません。</p>`) + `</details>`;
+    for (const b of box.querySelectorAll(".ask-link")) b.addEventListener("click", () => openAnswer(c.id, t.ask[+b.dataset.i]));
+  }
+
+  // ---------- 確認待ちに答える（押すと入力画面で回答の準備をする） ----------
+  const ANSWER_TYPE = "期限・起案時間の回答";
+  function openAnswer(id, question) {
+    if (!findCase(id)) return;
+    if (current !== id) selectCase(id);
+    showView("input");
+    $("memoType").value = ANSWER_TYPE;
+    const q = (question || "").replace("【要確認】", "").trim();
+    const memo = $("memo");
+    if (q && !memo.value.includes(q)) {
+      memo.value = (memo.value.trim() ? memo.value.replace(/\s+$/, "") + "\n\n" : "") + `（質問）${q}\n（回答）`;
+      saveDraft();
+    }
+    updateSendState();
+    alertBox("種類を「確認待ちへの回答」にしました。（回答）のあとに答えを書いて送ってください。");
+    memo.focus();
+    memo.setSelectionRange(memo.value.length, memo.value.length);
+    memo.scrollIntoView({ block: "center" });
+  }
+  // 文中の案件番号（A176、B001など）を探す
+  function findCaseIdIn(text) {
+    for (const m of text.matchAll(/(?<![0-9A-Za-z])([A-Za-z]\d{3,})(?![0-9A-Za-z])/g)) if (findCase(m[1])) return m[1];
+    return null;
+  }
+  // 表示したMarkdownの中の確認待ちの行を、押せるようにする
+  // fixedId: 案件カードのときはその案件。ダッシュボードでは行の中の案件番号から探す
+  function linkAsks(root, fixedId) {
+    let section = "";
+    for (const el of root.querySelectorAll("h1,h2,h3,h4,li")) {
+      if (el.tagName !== "LI") { section = el.textContent; continue; }
+      const text = el.textContent;
+      if (!text.includes("【要確認】") && !(!fixedId && section.includes("今日の確認"))) continue;
+      const id = fixedId || findCaseIdIn(text);
+      if (!id || id === GENERAL.id) continue;
+      el.classList.add("ask-row");
+      el.title = "押すと、この案件の回答欄を開きます";
+      el.tabIndex = 0;
+      const go = () => openAnswer(id, text);
+      el.addEventListener("click", go);
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+    }
   }
 
   const caseLabel = (c) => [c.id, c.client || c.initials, c.crime].filter(Boolean).join(" ");
@@ -482,6 +527,7 @@
   function renderDashboard() {
     const d = store.get("md:dashboard", null);
     $("dashboard").innerHTML = d ? md(d) + syncNote() : '<p class="muted">同期するとダッシュボードが表示されます。</p>';
+    linkAsks($("dashboard"));
   }
   const NOTE_ORDER = ["接見", "依頼者との打合せ", "会議メモ", "期日メモ", "裁判所打合せ", "検察官とのやりとり", "面談", "電話", "検討メモ", "その他"];
   let caseSub = store.get("caseSub", "card");
@@ -513,6 +559,7 @@
       const card = store.get("md:case:" + c.id, null);
       $("caseCard").innerHTML = card ? md(card) + syncNote()
         : `<h1>${esc(caseLabel(c))}</h1><p class="muted">まだ案件カードがありません。メモを送ると、次回の定時処理でClaudeが作成します。</p>`;
+      linkAsks($("caseCard"), c.id);
     } else {
       $("caseCard").innerHTML = md(store.get(`md:note:${folder}:${caseSub}`, "")) + '<p id="noteEnd" class="muted small">― ここまで ―</p>' + syncNote();
       requestAnimationFrame(() => { const e = $("noteEnd"); if (e && !$("view-case").hidden) e.scrollIntoView({ block: "end" }); });
