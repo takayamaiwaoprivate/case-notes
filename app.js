@@ -122,13 +122,48 @@
   const GENERAL_TYPE = "お知らせ・お願い";
   const findCase = (id) => (id === GENERAL.id ? GENERAL : cases.find((x) => x.id === id));
 
+  // ---------- 宿題の「済」 ----------
+  // 押した宿題はこの端末ですぐ画面から消し、受信箱に「宿題の済」を送る（定時整理が案件カードを [x] にする）。
+  // 済になった宿題（[x]）は、読み込んだときにも表示しない。
+  const taskKey = (s) => String(s).replace(/\*\*/g, "").replace(/^[☐☑]\s*/, "").replace(/\s*済$/, "").replace(/\s+/g, " ").trim();
+  let doneTasks = store.get("doneTasks", []).filter((d) => Date.now() - d.at < 60 * 864e5); // 60日で忘れる
+  // ダッシュボードの行は「A012 山田 示談書を作る」のように案件名が付くので、同じ案件の行に済の文が含まれていれば済とみなす
+  const isDone = (text, caseId) => {
+    const k = taskKey(text);
+    return doneTasks.some((d) => d.key === k || (caseId && d.caseId === caseId && d.key.length >= 4 && k.includes(d.key)));
+  };
+  async function markDone(caseId, text) {
+    const key = taskKey(text);
+    if (!key || isDone(key)) return;
+    doneTasks.push({ key, caseId, at: Date.now() });
+    store.set("doneTasks", doneTasks);
+    queueMemo(caseId || GENERAL.id, "宿題の済", `済: ${key}`);
+    renderCases(); renderDashboard(); renderCaseCard(); renderTasks();
+    alertBox("済にしました（次回の定時整理で案件カードにも反映します）");
+    await flushOutbox();
+  }
+  // 表示した中の宿題の行に「済」ボタンを付ける。fixedId が無いときは行の中の案件番号から探す
+  function addDoneButtons(root, fixedId) {
+    for (const li of root.querySelectorAll("li.task")) {
+      if (li.dataset.done === "1") continue;
+      const text = taskKey(li.textContent);
+      const id = fixedId || findCaseIdIn(text);
+      if (isDone(text, id)) { li.remove(); continue; }
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "done-btn"; b.textContent = "済";
+      b.title = "この宿題を済にして画面から消す";
+      b.addEventListener("click", (e) => { e.stopPropagation(); markDone(id, text); });
+      li.append(" ", b);
+    }
+  }
+
   // 案件カードから宿題（未完了のチェック項目）と確認待ち（【要確認】の行）を取り出す
   function caseTasks(id) {
     const card = store.get("md:case:" + id, "") || "";
     const todo = [], ask = [];
     for (const l of card.split("\n")) {
       const m = l.match(/^\s*[-*]\s+\[ \]\s+(.*)/);
-      if (m) todo.push(m[1].trim());
+      if (m) { if (!isDone(m[1])) todo.push(m[1].trim()); }
       else if (l.includes("【要確認】")) ask.push(l.replace(/^\s*[-*]\s+/, "").replace("【要確認】", "").trim());
     }
     return { todo, ask };
@@ -144,9 +179,10 @@
     const askLi = t.ask.map((x, i) => `<li><button type="button" class="ask-link" data-i="${i}">${esc(x)}</button></li>`).join("");
     box.innerHTML = `<details ${t.todo.length + t.ask.length ? "open" : ""}><summary>この案件の宿題 ${t.todo.length}件・確認待ち ${t.ask.length}件</summary>`
       + (t.ask.length ? `<div class="tk-h warn">確認待ち（押すと回答欄を開きます）</div><ul>${askLi}</ul>` : "")
-      + (t.todo.length ? `<div class="tk-h">宿題</div><ul>${li(t.todo)}</ul>` : "")
+      + (t.todo.length ? `<div class="tk-h">宿題</div><ul>${t.todo.map((x, i) => `<li>${esc(taskKey(x))} <button type="button" class="done-btn" data-d="${i}" title="この宿題を済にして画面から消す">済</button></li>`).join("")}</ul>` : "")
       + (t.todo.length + t.ask.length ? "" : `<p class="muted small">今のところありません。</p>`) + `</details>`;
     for (const b of box.querySelectorAll(".ask-link")) b.addEventListener("click", () => openAnswer(c.id, t.ask[+b.dataset.i]));
+    for (const b of box.querySelectorAll(".done-btn")) b.addEventListener("click", () => markDone(c.id, t.todo[+b.dataset.d]));
   }
 
   // ---------- 確認待ちに答える（押すと入力画面で回答の準備をする） ----------
@@ -555,7 +591,7 @@
       }
       let m;
       if ((m = l.match(/^(#{1,4})\s+(.*)/))) { closeList(); html += `<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`; }
-      else if ((m = l.match(/^\s*[-*]\s+\[( |x)\]\s+(.*)/i))) { if (!list) { html += "<ul>"; list = true; } html += `<li class="task">${m[1].trim() ? "☑" : "☐"} ${inline(m[2])}</li>`; }
+      else if ((m = l.match(/^\s*[-*]\s+\[( |x)\]\s+(.*)/i))) { if (!m[1].trim()) { if (!list) { html += "<ul>"; list = true; } html += `<li class="task">☐ ${inline(m[2])}</li>`; } } // 済（[x]）の宿題は表示しない
       else if ((m = l.match(/^\s*[-*]\s+(.*)/))) { if (!list) { html += "<ul>"; list = true; } html += `<li>${inline(m[1])}</li>`; }
       else if (!l.trim()) closeList();
       else { closeList(); html += `<p>${inline(l)}</p>`; }
@@ -594,6 +630,7 @@
     const d = store.get("md:dashboard", null);
     $("dashboard").innerHTML = d ? md(boldCourtDates(dropHiddenCases(d))) + syncNote() : '<p class="muted">同期するとダッシュボードが表示されます。</p>';
     linkAsks($("dashboard"));
+    addDoneButtons($("dashboard"));
   }
   const NOTE_ORDER = ["接見", "依頼者との打合せ", "会議メモ", "期日メモ", "裁判所打合せ", "検察官とのやりとり", "面談", "電話", "検討メモ", "その他"];
   let caseSub = store.get("caseSub", "card");
@@ -626,6 +663,7 @@
       $("caseCard").innerHTML = card ? md(card) + syncNote()
         : `<h1>${esc(caseLabel(c))}</h1><p class="muted">まだ案件カードがありません。メモを送ると、次回の定時処理でClaudeが作成します。</p>`;
       linkAsks($("caseCard"), c.id);
+      addDoneButtons($("caseCard"), c.id);
     } else {
       $("caseCard").innerHTML = md(store.get(`md:note:${folder}:${caseSub}`, "")) + '<p id="noteEnd" class="muted small">― ここまで ―</p>' + syncNote();
       requestAnimationFrame(() => { const e = $("noteEnd"); if (e && !$("view-case").hidden) e.scrollIntoView({ block: "end" }); });
