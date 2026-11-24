@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2f4a6d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="案件ノート">
+<title>案件ノート</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <h1>案件ノート</h1>
+  <span id="net" class="pill"></span>
+  <button id="sync" class="ghost" type="button" title="Dropboxと同期">同期</button>
+  <button id="openSettings" class="ghost" type="button" title="設定">設定</button>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" data-view="input" aria-selected="true">入力</button>
+  <button role="tab" data-view="home">ホーム</button>
+  <button role="tab" data-view="case">案件</button>
+</nav>
+
+<main>
+  <section id="view-input" class="view layout">
+    <aside class="cases">
+      <div class="cases-head">
+        <input id="caseFilter" type="search" placeholder="案件を探す" aria-label="案件を探す">
+        <button id="newCase" type="button" class="ghost">＋新規</button>
+      </div>
+      <ul id="caseList" class="case-list"></ul>
+    </aside>
+    <div class="editor">
+      <div class="editor-head">
+        <div>
+          <div class="muted small">選択中の案件</div>
+          <div id="currentCase" class="current">案件を選んでください</div>
+        </div>
+        <select id="memoType" aria-label="メモの種類">
+          <option value="自動判定">種類：自動判定</option>
+          <option value="接見">接見</option>
+          <option value="裁判所打合せ">裁判所打合せ</option>
+          <option value="検察官とのやりとり">検察官とのやりとり</option>
+          <option value="電話・面談">電話・面談</option>
+          <option value="期限・起案時間の回答">確認待ちへの回答</option>
+          <option value="その他">その他</option>
+        </select>
+      </div>
+      <textarea id="memo" placeholder="ここにどんどん打ち込んでください。&#10;冒頭に「接見」「打合せ（裁判所）」などと書くと種類の判定が確実になります。" disabled></textarea>
+      <div class="editor-foot">
+        <span id="draftState" class="muted small"></span>
+        <button id="send" type="button" class="primary" disabled>受信箱へ送る</button>
+      </div>
+      <div id="outbox" class="muted small"></div>
+    </div>
+  </section>
+
+  <section id="view-home" class="view" hidden>
+    <article id="dashboard" class="md"><p class="muted">同期するとダッシュボードが表示されます。</p></article>
+  </section>
+
+  <section id="view-case" class="view" hidden>
+    <article id="caseCard" class="md"><p class="muted">入力タブで案件を選ぶと、ここに案件カードが表示されます。</p></article>
+  </section>
+</main>
+
+<dialog id="newCaseDialog">
+  <form method="dialog" id="newCaseForm">
+    <h2>新規案件</h2>
+    <label>案件番号<input name="caseId" required pattern="[0-9A-Za-z\-]+" placeholder="2026-013"></label>
+    <label>イニシャル<input name="initials" required maxlength="6" placeholder="YT"></label>
+    <label>罪名<input name="crime" placeholder="窃盗"></label>
+    <label>身柄
+      <select name="custody"><option>勾留中</option><option>逮捕中</option><option>在宅</option><option>保釈中</option><option>その他</option></select>
+    </label>
+    <p class="muted small">氏名は入れず、イニシャルにしてください。詳しい情報はメモに書けばClaudeが案件カードに整理します。</p>
+    <menu><button value="cancel" type="button" class="ghost" id="cancelNewCase">やめる</button><button value="ok" class="primary">作成</button></menu>
+  </form>
+</dialog>
+
+<dialog id="settingsDialog">
+  <form method="dialog">
+    <h2>設定</h2>
+    <p id="authState"></p>
+    <p><button type="button" id="connect" class="primary">Dropboxに接続</button>
+       <button type="button" id="disconnect" class="ghost">接続を解除</button></p>
+    <details>
+      <summary>Claude連携用の鍵</summary>
+      <p class="muted small">定時処理を行うClaudeに、この端末と同じ「案件ノート」フォルダだけを扱わせるための鍵です。表示した値は、プロジェクト設定の環境変数 DROPBOX_REFRESH_TOKEN にご自身で貼り付けてください。チャットには貼らないでください。</p>
+      <button type="button" id="showKey" class="ghost">鍵を表示</button>
+      <code id="keyOut" class="key"></code>
+    </details>
+    <menu><button value="close" class="primary">閉じる</button></menu>
+  </form>
+</dialog>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
