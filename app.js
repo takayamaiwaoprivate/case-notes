@@ -419,14 +419,22 @@
   }
 
   // ---------- 新規案件 ----------
+  // 依頼者のいない区分（番号の頭文字・名称欄の見出し・例）
+  const OTHER_KINDS = {
+    "会務": { prefix: "B", label: "名称（委員会・会議名）", example: "刑事弁護委員会" },
+    "執筆": { prefix: "C", label: "名称（原稿・書籍・論文名）", example: "季刊刑事弁護 原稿" },
+    "研修準備": { prefix: "D", label: "名称（研修名）", example: "新人弁護士向け 接見研修" },
+  };
   function nextCaseId(kind) {
-    // 事務所の番号（例: A000, A001）があれば、その続きを提案する。会務は B001 から
-    if (kind === "会務") {
-      const n = Math.max(0, ...cases.map((c) => (String(c.id).match(/^B(\d+)$/) || [])[1]).filter(Boolean).map(Number));
-      return "B" + String(n + 1).padStart(3, "0");
+    // 事務所の番号（例: A000, A001）があれば、その続きを提案する。会務は B001、執筆は C001、研修準備は D001 から
+    const pre = OTHER_KINDS[kind] && OTHER_KINDS[kind].prefix;
+    if (pre) {
+      const re = new RegExp(`^${pre}(\\d+)$`);
+      const n = Math.max(0, ...cases.map((c) => (String(c.id).match(re) || [])[1]).filter(Boolean).map(Number));
+      return pre + String(n + 1).padStart(3, "0");
     }
     let best = null;
-    for (const c of cases.filter((x) => !/^B\d+$/.test(x.id))) {
+    for (const c of cases.filter((x) => !/^[BCD]\d+$/.test(x.id))) {
       const m = String(c.id).match(/^([A-Za-z]+)(\d+)$/);
       if (m && (!best || parseInt(m[2], 10) > best.n)) best = { p: m[1], n: parseInt(m[2], 10), w: m[2].length };
     }
@@ -437,13 +445,13 @@
   async function createCase(form) {
     const id = form.caseId.value.trim();
     if (cases.some((c) => c.id === id)) { alertBox("その案件番号はすでにあります。"); return; }
-    const kaimu = form.kind.value === "会務";
+    const kind = form.kind.value, kaimu = !!OTHER_KINDS[kind];
     const c = kaimu
-      ? { id, client: form.client.value.trim(), initials: "", crime: "会務", custody: "", kind: "会務", pending: true }
+      ? { id, client: form.client.value.trim(), initials: "", crime: kind, custody: "", kind, pending: true }
       : { id, client: form.client.value.trim(), initials: form.initials.value.trim(), crime: form.crime.value.trim(), custody: form.custody.value, pending: true };
     cases.push(c);
     store.set("cases", cases);
-    queueMemo(id, "新規案件", kaimu ? `区分: 会務\n案件番号: ${c.id}\n名称: ${c.client}` : `区分: 事件\n案件番号: ${c.id}\n依頼者名: ${c.client}\nイニシャル: ${c.initials}\n罪名: ${c.crime}\n身柄: ${c.custody}`);
+    queueMemo(id, "新規案件", kaimu ? `区分: ${kind}\n案件番号: ${c.id}\n名称: ${c.client}` : `区分: 事件\n案件番号: ${c.id}\n依頼者名: ${c.client}\nイニシャル: ${c.initials}\n罪名: ${c.crime}\n身柄: ${c.custody}`);
     selectCase(id);
     await flushOutbox();
   }
@@ -670,9 +678,9 @@
     $("showKey").addEventListener("click", () => { const a = store.get("auth", null); $("keyOut").textContent = a ? a.refresh : "先にDropboxに接続してください。"; });
     $("newCase").addEventListener("click", () => { const f = $("newCaseForm"); f.reset(); f.caseId.value = nextCaseId(f.kind.value); setKind(); $("newCaseDialog").showModal(); });
     const setKind = () => {
-      const f = $("newCaseForm"), kaimu = f.kind.value === "会務";
-      $("clientLabel").textContent = kaimu ? "名称（委員会・会議名）" : "依頼者名";
-      f.client.placeholder = kaimu ? "刑事弁護委員会" : "山田太郎";
+      const f = $("newCaseForm"), k = OTHER_KINDS[f.kind.value], kaimu = !!k;
+      $("clientLabel").textContent = kaimu ? k.label : "依頼者名";
+      f.client.placeholder = kaimu ? k.example : "山田太郎";
       for (const el of f.querySelectorAll(".jiken")) el.hidden = kaimu;
     };
     $("caseKind").addEventListener("change", () => { const f = $("newCaseForm"); f.caseId.value = nextCaseId(f.kind.value); setKind(); });
