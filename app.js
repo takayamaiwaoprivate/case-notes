@@ -313,13 +313,13 @@
 
   // ---------- 新規案件 ----------
   function nextCaseId(kind) {
-    // 事務所の番号（例: A000, A001）があれば、その続きを提案する。会務は K001 から
+    // 事務所の番号（例: A000, A001）があれば、その続きを提案する。会務は B001 から
     if (kind === "会務") {
-      const n = Math.max(0, ...cases.map((c) => (String(c.id).match(/^K(\d+)$/) || [])[1]).filter(Boolean).map(Number));
-      return "K" + String(n + 1).padStart(3, "0");
+      const n = Math.max(0, ...cases.map((c) => (String(c.id).match(/^B(\d+)$/) || [])[1]).filter(Boolean).map(Number));
+      return "B" + String(n + 1).padStart(3, "0");
     }
     let best = null;
-    for (const c of cases.filter((x) => !/^K\d+$/.test(x.id))) {
+    for (const c of cases.filter((x) => !/^B\d+$/.test(x.id))) {
       const m = String(c.id).match(/^([A-Za-z]+)(\d+)$/);
       if (m && (!best || parseInt(m[2], 10) > best.n)) best = { p: m[1], n: parseInt(m[2], 10), w: m[2].length };
     }
