@@ -70,3 +70,8 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 .st-送信待ち { color: var(--warn); border-color: var(--warn); }
 .st-未整理 { color: var(--accent); border-color: var(--accent); }
 .st-整理済み { color: var(--ok); border-color: var(--ok); }
+.subtabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.subtabs button { border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 4px 12px; cursor: pointer; font-size: 14px; }
+.subtabs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.md.note p { margin: 0; }
+.md.note h2 { margin-top: 28px; }

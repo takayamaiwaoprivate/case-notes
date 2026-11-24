@@ -382,6 +382,18 @@
       if (current) selectCase(current);
       const dash = await dbxDownload("/ダッシュボード.md");
       if (dash != null) store.set("md:dashboard", dash);
+      // 種類別ノート（接見メモなどを1つにまとめたもの）
+      try {
+        const notes = (await dbxList("/案件")).filter((e) => e[".tag"] === "file" && /\/ノート_[^/]+\.md$/.test(e.path_display));
+        const byFolder = {};
+        await Promise.all(notes.map(async (e) => {
+          const parts = e.path_display.split("/"); const folder = parts[parts.length - 2];
+          const kind = e.name.replace(/^ノート_/, "").replace(/\.md$/, "");
+          const t = await dbxDownload(e.path_display);
+          if (t != null) { (byFolder[folder] = byFolder[folder] || []).push(kind); store.set(`md:note:${folder}:${kind}`, t); }
+        }));
+        store.set("noteIndex", byFolder);
+      } catch {}
       await Promise.all(cases.filter((x) => !x.pending).map(async (c) => {
         const card = await dbxDownload(`/案件/${c.folder || c.id}/案件カード.md`);
         if (card != null) store.set("md:case:" + c.id, card);
@@ -435,12 +447,33 @@
     const d = store.get("md:dashboard", null);
     $("dashboard").innerHTML = d ? md(d) + syncNote() : '<p class="muted">同期するとダッシュボードが表示されます。</p>';
   }
+  const NOTE_ORDER = ["接見", "依頼者との打合せ", "期日メモ", "裁判所打合せ", "検察官とのやりとり", "面談", "電話", "その他"];
+  let caseSub = store.get("caseSub", "card");
+
   function renderCaseCard() {
     const c = cases.find((x) => x.id === current);
-    if (!c) { $("caseCard").innerHTML = '<p class="muted">入力タブで案件を選ぶと、ここに案件カードが表示されます。</p>'; return; }
-    const card = store.get("md:case:" + c.id, null);
-    $("caseCard").innerHTML = card ? md(card) + syncNote()
-      : `<h1>${esc(caseLabel(c))}</h1><p class="muted">まだ案件カードがありません。メモを送ると、次回の定時処理でClaudeが作成します。</p>`;
+    const tabs = $("caseSubTabs");
+    if (!c) { tabs.innerHTML = ""; $("caseCard").innerHTML = '<p class="muted">入力タブで案件を選ぶと、ここに案件カードが表示されます。</p>'; return; }
+    const folder = c.folder || c.id;
+    const kinds = (store.get("noteIndex", {})[folder] || []).slice().sort((a, b) => NOTE_ORDER.indexOf(a) - NOTE_ORDER.indexOf(b));
+    if (caseSub !== "card" && !kinds.includes(caseSub)) caseSub = "card";
+    tabs.innerHTML = "";
+    for (const k of ["card"].concat(kinds)) {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = k === "card" ? "案件カード" : k + (k.endsWith("メモ") ? "" : "メモ");
+      b.setAttribute("aria-pressed", String(k === caseSub));
+      b.addEventListener("click", () => { caseSub = k; store.set("caseSub", k); renderCaseCard(); });
+      tabs.append(b);
+    }
+    $("caseCard").classList.toggle("note", caseSub !== "card");
+    if (caseSub === "card") {
+      const card = store.get("md:case:" + c.id, null);
+      $("caseCard").innerHTML = card ? md(card) + syncNote()
+        : `<h1>${esc(caseLabel(c))}</h1><p class="muted">まだ案件カードがありません。メモを送ると、次回の定時処理でClaudeが作成します。</p>`;
+    } else {
+      $("caseCard").innerHTML = md(store.get(`md:note:${folder}:${caseSub}`, "")) + '<p id="noteEnd" class="muted small">― ここまで ―</p>' + syncNote();
+      requestAnimationFrame(() => { const e = $("noteEnd"); if (e && !$("view-case").hidden) e.scrollIntoView({ block: "end" }); });
+    }
   }
 
   // ---------- その他の画面要素 ----------
@@ -461,6 +494,7 @@
     for (const b of document.querySelectorAll(".tabs button")) b.setAttribute("aria-selected", String(b.dataset.view === v));
     for (const s of document.querySelectorAll(".view")) s.hidden = s.id !== "view-" + v;
     store.set("view", v);
+    if (v === "case") renderCaseCard();
     if (v === "sent") { renderSent(); if (navigator.onLine && store.get("auth", null)) loadRemoteSent(); }
   }
 
