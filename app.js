@@ -117,6 +117,10 @@
   let remoteSent = store.get("remoteSent", []);  // Dropbox上の送信済みメモ（全端末分の一覧）
   let hidden = store.get("hidden", { ids: [], updated: 0, dirty: false });
   const isHidden = (id) => hidden.ids.includes(id);
+  // 特定の案件に紐づかない「Claudeへのお知らせ・お願い」用の入口（案件一覧の先頭に常に出す）
+  const GENERAL = { id: "全体", client: "Claudeへのお知らせ・お願い", crime: "（案件なし）", general: true };
+  const GENERAL_TYPE = "お知らせ・お願い";
+  const findCase = (id) => (id === GENERAL.id ? GENERAL : cases.find((x) => x.id === id));
 
   // 案件カードから宿題（未完了のチェック項目）と確認待ち（【要確認】の行）を取り出す
   function caseTasks(id) {
@@ -154,6 +158,18 @@
     const nHidden = cases.filter((c) => isHidden(c.id)).length;
     $("hiddenCount").textContent = nHidden ? `（${nHidden}件）` : "";
     const shown = cases.filter((c) => (showAll || !isHidden(c.id) || c.id === current) && (!f || JSON.stringify(c).includes(f)));
+    {
+      const li = document.createElement("li");
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "general";
+      b.setAttribute("aria-current", String(current === GENERAL.id));
+      b.textContent = "✉ " + GENERAL.client;
+      const sub = document.createElement("span");
+      sub.className = "sub"; sub.textContent = "案件に関係のない連絡・指示はここから";
+      b.append(sub);
+      b.addEventListener("click", () => selectCase(GENERAL.id));
+      li.append(b); list.append(li);
+    }
     if (!shown.length) {
       const li = document.createElement("li");
       li.className = "muted small";
@@ -181,10 +197,17 @@
     saveDraft();
     current = id;
     store.set("currentCase", id);
-    const c = cases.find((x) => x.id === id);
-    $("currentCase").textContent = c ? caseLabel(c) : "案件を選んでください";
+    const c = findCase(id);
+    const gen = !!(c && c.general);
+    $("currentCase").textContent = c ? (gen ? GENERAL.client + "（案件なし）" : caseLabel(c)) : "案件を選んでください";
     $("memo").disabled = !c;
-    $("toggleHidden").hidden = !c;
+    $("memo").placeholder = gen
+      ? "特定の案件に関係のない、Claudeへのお知らせ・お願いを書いてください。\n例: 進行中事件フォルダにあるが案件一覧にない事件（○○、△△）は、すべて終結案件です。\n例: 朝の「今日の確認」は3件までにしてください。"
+      : MEMO_PLACEHOLDER;
+    const sel = $("memoType");
+    if (gen) { if (!sel.querySelector(`option[value="${GENERAL_TYPE}"]`)) sel.add(new Option(GENERAL_TYPE, GENERAL_TYPE)); sel.value = GENERAL_TYPE; sel.disabled = true; }
+    else { const o = sel.querySelector(`option[value="${GENERAL_TYPE}"]`); if (o) o.remove(); sel.disabled = false; if (!sel.value) sel.value = "自動判定"; }
+    $("toggleHidden").hidden = !c || gen;
     $("toggleHidden").textContent = c && isHidden(c.id) ? "再表示する" : "終了（非表示）";
     $("memo").value = store.get("draft:" + id, "");
     updateSendState();
@@ -192,6 +215,8 @@
     renderCaseCard();
     renderTasks();
   }
+
+  const MEMO_PLACEHOLDER = document.getElementById("memo").placeholder;
 
   // ---------- 下書き（打つたびに端末へ保存） ----------
   let draftTimer = null;
@@ -221,7 +246,7 @@
   function queueMemo(caseId, type, body) {
     const d = new Date();
     const text = `---\n案件: ${caseId}\n種類: ${type}\n作成: ${isoLocal(d)}\n端末: ${deviceName()}\n---\n${body.trim()}\n`;
-    const safe = caseId.replace(/[^0-9A-Za-z\-]/g, "_");
+    const safe = caseId === GENERAL.id ? "OSHIRASE" : caseId.replace(/[^0-9A-Za-z\-]/g, "_");
     const path = `${INBOX}/${stamp(d)}_${safe}.txt`;
     outbox.push({ path, text });
     store.set("outbox", outbox);
@@ -279,7 +304,7 @@
     const box = $("sentList"); box.innerHTML = "";
     if (!list.length) { box.innerHTML = '<p class="muted small">まだありません。</p>'; return; }
     for (const x of list.slice(0, 200)) {
-      const c = cases.find((k) => k.id === x.caseId);
+      const c = findCase(x.caseId);
       const d = document.createElement("details"); d.className = "sent";
       d.innerHTML = `<summary><span class="st st-${x.state}">${esc(x.state)}</span> ${esc(fmtAt(x.at))}　${esc(c ? caseLabel(c) : x.caseId || "")}　<span class="muted">${esc(x.type || "")}</span></summary><pre class="memo-body">${x.body != null ? esc(x.body) : "（開くと読み込みます）"}</pre>`;
       if (x.body == null && x.path) d.addEventListener("toggle", async () => {
@@ -305,9 +330,11 @@
     queueMemo(current, $("memoType").value, body);
     $("memo").value = "";
     store.del("draft:" + current);
-    $("memoType").value = "自動判定";
+    if (current !== GENERAL.id) $("memoType").value = "自動判定";
     updateSendState();
-    $("draftState").textContent = "受信箱に送りました（次回の定時処理でClaudeが整理します）";
+    $("draftState").textContent = current === GENERAL.id
+      ? "お知らせを送りました（次回の定時処理でClaudeが読み、「案件」タブの記録に載せます）"
+      : "受信箱に送りました（次回の定時処理でClaudeが整理します）";
     await flushOutbox();
   }
 
@@ -389,6 +416,8 @@
       if (current) selectCase(current);
       const dash = await dbxDownload("/ダッシュボード.md");
       if (dash != null) store.set("md:dashboard", dash);
+      const notice = await dbxDownload("/先生からのお知らせ.md");
+      if (notice != null) store.set("md:notice", notice);
       // 種類別ノート（接見メモなどを1つにまとめたもの）
       try {
         const notes = (await dbxList("/案件")).filter((e) => e[".tag"] === "file" && /\/ノート_[^/]+\.md$/.test(e.path_display));
@@ -460,6 +489,13 @@
   function renderCaseCard() {
     const c = cases.find((x) => x.id === current);
     const tabs = $("caseSubTabs");
+    if (current === GENERAL.id) {
+      tabs.innerHTML = ""; $("caseCard").classList.remove("note");
+      const n = store.get("md:notice", null);
+      $("caseCard").innerHTML = n ? md(n) + syncNote()
+        : `<h1>${esc(GENERAL.client)}</h1><p class="muted">まだ記録がありません。お知らせを送ると、次回の定時処理でClaudeが読み、ここに受け取った内容と対応を書きます。</p>`;
+      return;
+    }
     if (!c) { tabs.innerHTML = ""; $("caseCard").innerHTML = '<p class="muted">入力タブで案件を選ぶと、ここに案件カードが表示されます。</p>'; return; }
     const folder = c.folder || c.id;
     const kinds = (store.get("noteIndex", {})[folder] || []).slice().sort((a, b) => NOTE_ORDER.indexOf(a) - NOTE_ORDER.indexOf(b));
