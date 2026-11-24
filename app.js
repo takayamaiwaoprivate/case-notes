@@ -447,7 +447,7 @@
     const d = store.get("md:dashboard", null);
     $("dashboard").innerHTML = d ? md(d) + syncNote() : '<p class="muted">同期するとダッシュボードが表示されます。</p>';
   }
-  const NOTE_ORDER = ["接見", "依頼者との打合せ", "期日メモ", "裁判所打合せ", "検察官とのやりとり", "面談", "電話", "その他"];
+  const NOTE_ORDER = ["接見", "依頼者との打合せ", "期日メモ", "裁判所打合せ", "検察官とのやりとり", "面談", "電話", "検討メモ", "その他"];
   let caseSub = store.get("caseSub", "card");
 
   function renderCaseCard() {
