@@ -72,11 +72,11 @@
     return a.access;
   }
 
-  async function dbxUpload(path, text) {
+  async function dbxUpload(path, text, overwrite) {
     const res = await fetch("https://content.dropboxapi.com/2/files/upload", {
       method: "POST",
       headers: { Authorization: "Bearer " + (await accessToken()), "Content-Type": "application/octet-stream",
-        "Dropbox-API-Arg": apiArg({ path, mode: "add", autorename: true, mute: true }) },
+        "Dropbox-API-Arg": apiArg(overwrite ? { path, mode: "overwrite", mute: true } : { path, mode: "add", autorename: true, mute: true }) },
       body: new TextEncoder().encode(text),
     });
     if (!res.ok) throw new Error("upload " + res.status);
@@ -96,6 +96,9 @@
   let cases = store.get("cases", []);          // Claudeが作る cases.json の写し＋端末で作った新規案件
   let current = store.get("currentCase", null);
   let outbox = store.get("outbox", []);         // 送信待ちのメモ
+  // 終了して非表示にした案件（削除はしない）。Dropboxの /hidden.json で端末間に共有する
+  let hidden = store.get("hidden", { ids: [], updated: 0, dirty: false });
+  const isHidden = (id) => hidden.ids.includes(id);
 
   const caseLabel = (c) => [c.id, c.client || c.initials, c.crime].filter(Boolean).join(" ");
 
@@ -104,7 +107,10 @@
     const f = $("caseFilter").value.trim();
     const list = $("caseList");
     list.innerHTML = "";
-    const shown = cases.filter((c) => !f || JSON.stringify(c).includes(f));
+    const showAll = $("showHidden").checked;
+    const nHidden = cases.filter((c) => isHidden(c.id)).length;
+    $("hiddenCount").textContent = nHidden ? `（${nHidden}件）` : "";
+    const shown = cases.filter((c) => (showAll || !isHidden(c.id) || c.id === current) && (!f || JSON.stringify(c).includes(f)));
     if (!shown.length) {
       const li = document.createElement("li");
       li.className = "muted small";
@@ -119,7 +125,7 @@
       b.textContent = caseLabel(c);
       const sub = document.createElement("span");
       sub.className = "sub";
-      sub.textContent = [c.custody, c.next ? "次回 " + c.next : "", c.pending ? "（新規・未整理）" : ""].filter(Boolean).join("　");
+      sub.textContent = [isHidden(c.id) ? "【終了・非表示】" : "", c.custody, c.next ? "次回 " + c.next : "", c.pending ? "（新規・未整理）" : ""].filter(Boolean).join("　");
       b.append(sub);
       b.addEventListener("click", () => selectCase(c.id));
       li.append(b);
@@ -134,6 +140,8 @@
     const c = cases.find((x) => x.id === id);
     $("currentCase").textContent = c ? caseLabel(c) : "案件を選んでください";
     $("memo").disabled = !c;
+    $("toggleHidden").hidden = !c;
+    $("toggleHidden").textContent = c && isHidden(c.id) ? "再表示する" : "終了（非表示）";
     $("memo").value = store.get("draft:" + id, "");
     updateSendState();
     renderCases();
@@ -228,6 +236,35 @@
   }
 
   // ---------- 同期（Claudeの整理結果を読み込み、端末に保存） ----------
+  async function pushHidden() {
+    if (!hidden.dirty || !store.get("auth", null) || !navigator.onLine) return;
+    try {
+      await dbxUpload("/hidden.json", JSON.stringify({ ids: hidden.ids, updated: hidden.updated }), true);
+      hidden.dirty = false; store.set("hidden", hidden);
+    } catch {}
+  }
+
+  async function toggleHidden() {
+    if (!current) return;
+    const on = !isHidden(current);
+    hidden.ids = on ? hidden.ids.concat(current) : hidden.ids.filter((x) => x !== current);
+    hidden.updated = Date.now(); hidden.dirty = true;
+    store.set("hidden", hidden);
+    selectCase(current);
+    alertBox(on ? "終了にして一覧から隠しました（削除はしていません）。" : "一覧に戻しました。");
+    await pushHidden();
+  }
+
+  async function syncHidden() {
+    const hj = await dbxDownload("/hidden.json");
+    const remote = hj ? JSON.parse(hj) : null;
+    if (remote && (!hidden.dirty || remote.updated > hidden.updated)) {
+      hidden = { ids: remote.ids || [], updated: remote.updated || 0, dirty: false };
+      store.set("hidden", hidden);
+    } else if (!remote && hidden.ids.length) hidden.dirty = true;
+    await pushHidden();
+  }
+
   async function sync() {
     if (!store.get("auth", null)) { openSettings(); return; }
     if (!navigator.onLine) { setNet(); return; }
@@ -241,12 +278,15 @@
         cases = remote.concat(cases.filter((c) => c.pending && !ids.has(c.id)));
         store.set("cases", cases);
       }
+      await syncHidden();
+      renderCases();
+      if (current) selectCase(current);
       const dash = await dbxDownload("/ダッシュボード.md");
       if (dash != null) store.set("md:dashboard", dash);
-      for (const c of cases.filter((x) => !x.pending)) {
+      await Promise.all(cases.filter((x) => !x.pending).map(async (c) => {
         const card = await dbxDownload(`/案件/${c.folder || c.id}/案件カード.md`);
         if (card != null) store.set("md:case:" + c.id, card);
-      }
+      }));
       store.set("lastSync", Date.now());
     } catch (e) {
       if (String(e.message).includes("not-connected") || String(e.message).includes("refresh")) alertBox("Dropboxへの接続が切れています。設定から接続し直してください。");
@@ -328,6 +368,8 @@
   async function init() {
     for (const b of document.querySelectorAll(".tabs button")) b.addEventListener("click", () => showView(b.dataset.view));
     $("caseFilter").addEventListener("input", renderCases);
+    $("showHidden").addEventListener("change", renderCases);
+    $("toggleHidden").addEventListener("click", toggleHidden);
     $("memo").addEventListener("input", () => { updateSendState(); clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 400); });
     $("send").addEventListener("click", sendMemo);
     $("sync").addEventListener("click", sync);
@@ -348,7 +390,12 @@
     renderCases(); renderDashboard(); renderOutbox();
     if (current) selectCase(current);
     showView(store.get("view", "input"));
-    if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+    if ("serviceWorker" in navigator) {
+      // 新しい版が入ったら一度だけ自動で読み込み直す
+      const hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadController) location.reload(); });
+      navigator.serviceWorker.register("sw.js").then((r) => r.update()).catch(() => {});
+    }
     if (store.get("auth", null) && navigator.onLine) sync();
   }
   init();

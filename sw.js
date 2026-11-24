@@ -1,6 +1,6 @@
 // アプリ本体だけを端末に保存し、電波がなくても起動できるようにする。
 // 案件データはここでは扱わない（Dropbox との通信は常にネットワークへ）。
-const VERSION = "cn-v6";
+const VERSION = "cn-v7";
 const SHELL = ["./", "index.html", "style.css", "app.js", "config.js", "manifest.webmanifest", "icons/icon.svg"];
 
 self.addEventListener("install", (e) => {
@@ -14,7 +14,7 @@ self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
   // 新しい版があれば取りに行き、だめなら保存済みの版で起動する
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: "no-cache" })
       .then((res) => { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); return res; })
       .catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match("index.html")))
   );
