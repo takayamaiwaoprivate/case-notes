@@ -97,7 +97,7 @@
   let current = store.get("currentCase", null);
   let outbox = store.get("outbox", []);         // 送信待ちのメモ
 
-  const caseLabel = (c) => [c.id, c.initials, c.crime].filter(Boolean).join(" ");
+  const caseLabel = (c) => [c.id, c.client || c.initials, c.crime].filter(Boolean).join(" ");
 
   // ---------- 画面: 案件一覧 ----------
   function renderCases() {
@@ -219,10 +219,10 @@
   async function createCase(form) {
     const id = form.caseId.value.trim();
     if (cases.some((c) => c.id === id)) { alertBox("その案件番号はすでにあります。"); return; }
-    const c = { id, initials: form.initials.value.trim(), crime: form.crime.value.trim(), custody: form.custody.value, pending: true };
+    const c = { id, client: form.client.value.trim(), initials: form.initials.value.trim(), crime: form.crime.value.trim(), custody: form.custody.value, pending: true };
     cases.push(c);
     store.set("cases", cases);
-    queueMemo(id, "新規案件", `案件番号: ${c.id}\nイニシャル: ${c.initials}\n罪名: ${c.crime}\n身柄: ${c.custody}`);
+    queueMemo(id, "新規案件", `案件番号: ${c.id}\n依頼者名: ${c.client}\nイニシャル: ${c.initials}\n罪名: ${c.crime}\n身柄: ${c.custody}`);
     selectCase(id);
     await flushOutbox();
   }

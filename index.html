@@ -44,6 +44,7 @@
         <select id="memoType" aria-label="メモの種類">
           <option value="自動判定">種類：自動判定</option>
           <option value="接見">接見</option>
+          <option value="依頼者との打合せ">依頼者との打合せ</option>
           <option value="裁判所打合せ">裁判所打合せ</option>
           <option value="検察官とのやりとり">検察官とのやりとり</option>
           <option value="電話・面談">電話・面談</option>
@@ -51,7 +52,7 @@
           <option value="その他">その他</option>
         </select>
       </div>
-      <textarea id="memo" placeholder="ここにどんどん打ち込んでください。&#10;冒頭に「接見」「打合せ（裁判所）」などと書くと種類の判定が確実になります。" disabled></textarea>
+      <textarea id="memo" placeholder="ここにどんどん打ち込んでください。&#10;冒頭に「接見」「依頼者打合せ」「打合せ（裁判所）」などと書くと種類の判定が確実になります。" disabled></textarea>
       <div class="editor-foot">
         <span id="draftState" class="muted small"></span>
         <button id="send" type="button" class="primary" disabled>受信箱へ送る</button>
@@ -73,12 +74,13 @@
   <form method="dialog" id="newCaseForm">
     <h2>新規案件</h2>
     <label>案件番号<input name="caseId" required pattern="[0-9A-Za-z\-]+" placeholder="A001"></label>
-    <label>イニシャル<input name="initials" required maxlength="6" placeholder="YT"></label>
+    <label>依頼者名<input name="client" required placeholder="山田太郎"></label>
+    <label>イニシャル（任意）<input name="initials" maxlength="6" placeholder="YT"></label>
     <label>罪名<input name="crime" placeholder="窃盗"></label>
     <label>身柄
       <select name="custody"><option>勾留中</option><option>逮捕中</option><option>在宅</option><option>保釈中</option><option>その他</option></select>
     </label>
-    <p class="muted small">氏名は入れず、イニシャルにしてください。詳しい情報はメモに書けばClaudeが案件カードに整理します。</p>
+    <p class="muted small">詳しい情報はメモに書けばClaudeが案件カードに整理します。</p>
     <menu><button value="cancel" type="button" class="ghost" id="cancelNewCase">やめる</button><button value="ok" class="primary">作成</button></menu>
   </form>
 </dialog>
