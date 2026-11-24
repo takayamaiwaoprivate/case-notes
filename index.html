@@ -76,6 +76,20 @@
   </section>
 
   <section id="view-case" class="view" hidden>
+    <div id="caseEditor" class="editor case-editor" hidden>
+      <div class="editor-head">
+        <div>
+          <div class="muted small">この案件にメモを書く</div>
+          <div id="caseEditorCase" class="current"></div>
+        </div>
+        <select id="caseMemoType" aria-label="メモの種類"></select>
+      </div>
+      <textarea id="caseMemo" class="short" placeholder="ここに打ち込んで「受信箱へ送る」を押してください。入力タブと同じ下書きを使います。"></textarea>
+      <div class="editor-foot">
+        <span id="caseDraftState" class="muted small"></span>
+        <button id="caseSend" type="button" class="primary" disabled>受信箱へ送る</button>
+      </div>
+    </div>
     <div id="caseSubTabs" class="subtabs"></div>
     <article id="caseCard" class="md"><p class="muted">入力タブで案件を選ぶと、ここに案件カードが表示されます。</p></article>
   </section>

@@ -259,6 +259,21 @@
     renderCases();
     renderCaseCard();
     renderTasks();
+    renderCaseEditor();
+  }
+
+  // ---------- 案件タブのメモ入力欄（入力タブの欄と同じ下書き・種類を使う） ----------
+  function renderCaseEditor() {
+    const c = findCase(current);
+    $("caseEditor").hidden = !c;
+    if (!c) return;
+    $("caseEditorCase").textContent = c.general ? GENERAL.client + "（案件なし）" : caseLabel(c);
+    const src = $("memoType"), dst = $("caseMemoType");
+    dst.innerHTML = src.innerHTML;
+    dst.value = src.value; dst.disabled = src.disabled;
+    $("caseMemo").placeholder = c.general ? $("memo").placeholder : "ここに打ち込んで「受信箱へ送る」を押してください。\n入力タブと同じ下書きです（どちらで書いても続きから書けます）。";
+    if (document.activeElement !== $("caseMemo")) $("caseMemo").value = $("memo").value;
+    $("caseSend").disabled = $("send").disabled;
   }
 
   const MEMO_PLACEHOLDER = document.getElementById("memo").placeholder;
@@ -269,9 +284,12 @@
     if (!current) return;
     const v = $("memo").value;
     if (v) store.set("draft:" + current, v); else store.del("draft:" + current);
-    $("draftState").textContent = v ? "下書きを端末に保存しました " + new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "";
+    $("draftState").textContent = $("caseDraftState").textContent = v ? "下書きを端末に保存しました " + new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "";
   }
-  function updateSendState() { $("send").disabled = !current || !$("memo").value.trim(); }
+  function updateSendState() {
+    $("send").disabled = !current || !$("memo").value.trim();
+    if ($("caseSend")) $("caseSend").disabled = $("send").disabled;
+  }
 
   // ---------- 送信（オフライン時は送信待ちに積む） ----------
   const pad = (n) => String(n).padStart(2, "0");
@@ -377,9 +395,10 @@
     store.del("draft:" + current);
     if (current !== GENERAL.id) $("memoType").value = "自動判定";
     updateSendState();
-    $("draftState").textContent = current === GENERAL.id
+    $("draftState").textContent = $("caseDraftState").textContent = current === GENERAL.id
       ? "お知らせを送りました（次回の定時処理でClaudeが読み、「案件」タブの記録に載せます）"
       : "受信箱に送りました（次回の定時処理でClaudeが整理します）";
+    renderCaseEditor();
     await flushOutbox();
   }
 
@@ -572,7 +591,7 @@
     $("net").textContent = on ? "オンライン" : "オフライン";
     $("net").classList.toggle("off", !on);
   }
-  function alertBox(msg) { $("draftState").textContent = msg; }
+  function alertBox(msg) { $("draftState").textContent = msg; $("caseDraftState").textContent = msg; }
   function openSettings() {
     const a = store.get("auth", null);
     $("authState").textContent = a ? "Dropboxに接続済みです。" : "まだDropboxに接続していません。";
@@ -584,7 +603,7 @@
     for (const b of document.querySelectorAll(".tabs button")) b.setAttribute("aria-selected", String(b.dataset.view === v));
     for (const s of document.querySelectorAll(".view")) s.hidden = s.id !== "view-" + v;
     store.set("view", v);
-    if (v === "case") renderCaseCard();
+    if (v === "case") { renderCaseCard(); renderCaseEditor(); }
     if (v === "sent") { renderSent(); if (navigator.onLine && store.get("auth", null)) loadRemoteSent(); }
   }
 
@@ -598,6 +617,14 @@
     $("toggleHidden").addEventListener("click", toggleHidden);
     $("memo").addEventListener("input", () => { updateSendState(); clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 400); });
     $("send").addEventListener("click", sendMemo);
+    // 案件タブの入力欄: 打った内容を入力タブの欄にも写し、同じ下書きとして保存する
+    $("caseMemo").addEventListener("input", () => {
+      $("memo").value = $("caseMemo").value;
+      updateSendState(); clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 400);
+    });
+    $("caseMemoType").addEventListener("change", () => { $("memoType").value = $("caseMemoType").value; });
+    $("memoType").addEventListener("change", () => { $("caseMemoType").value = $("memoType").value; });
+    $("caseSend").addEventListener("click", () => { $("memo").value = $("caseMemo").value; $("memoType").value = $("caseMemoType").value; sendMemo(); });
     $("sync").addEventListener("click", sync);
     $("openSettings").addEventListener("click", openSettings);
     $("appKey").addEventListener("change", () => store.set("appKey", $("appKey").value.trim()));

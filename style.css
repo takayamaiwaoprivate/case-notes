@@ -82,3 +82,7 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 .md li.ask-row::after { content: " ✎ 回答する"; color: var(--accent); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .ask-link { all: unset; cursor: pointer; text-decoration: underline; text-decoration-color: var(--line); }
 .ask-link::after { content: " ✎ 回答する"; color: var(--accent); font-size: 12px; font-weight: 600; text-decoration: none; display: inline-block; }
+/* 案件タブのメモ入力欄 */
+.case-editor { margin-bottom: 12px; }
+textarea.short { min-height: 9em; }
+.editor-foot .primary { white-space: nowrap; }
