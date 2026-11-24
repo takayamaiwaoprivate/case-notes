@@ -6,6 +6,7 @@
   const CFG = window.CASE_NOTES_CONFIG || {};
   const INBOX = CFG.INBOX || "/00_受信箱";
   const $ = (id) => document.getElementById(id);
+  const appKey = () => CFG.DROPBOX_APP_KEY || store.get("appKey", "");
 
   // ---------- 保存（端末内） ----------
   const store = {
@@ -27,12 +28,12 @@
   const apiArg = (obj) => JSON.stringify(obj).replace(/[\u007f-￿]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
 
   async function startAuth() {
-    if (!CFG.DROPBOX_APP_KEY) { alertBox("Dropboxのアプリ登録がまだです（config.js の App key が空です）。"); return; }
+    if (!appKey()) { $("authState").textContent = "先にApp keyを入力してください。"; return; }
     const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
     const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
     sessionStorage.setItem("cn:pkce", verifier);
     const q = new URLSearchParams({
-      client_id: CFG.DROPBOX_APP_KEY, response_type: "code", code_challenge: challenge,
+      client_id: appKey(), response_type: "code", code_challenge: challenge,
       code_challenge_method: "S256", redirect_uri: redirectUri(), token_access_type: "offline",
     });
     location.href = "https://www.dropbox.com/oauth2/authorize?" + q;
@@ -48,7 +49,7 @@
     const res = await fetch("https://api.dropboxapi.com/oauth2/token", {
       method: "POST",
       body: new URLSearchParams({ code, grant_type: "authorization_code", code_verifier: verifier,
-        client_id: CFG.DROPBOX_APP_KEY, redirect_uri: redirectUri() }),
+        client_id: appKey(), redirect_uri: redirectUri() }),
     });
     sessionStorage.removeItem("cn:pkce");
     if (!res.ok) { alertBox("Dropboxへの接続に失敗しました。もう一度お試しください。"); return; }
@@ -62,7 +63,7 @@
     if (a.access && a.exp > Date.now()) return a.access;
     const res = await fetch("https://api.dropboxapi.com/oauth2/token", {
       method: "POST",
-      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: a.refresh, client_id: CFG.DROPBOX_APP_KEY }),
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: a.refresh, client_id: appKey() }),
     });
     if (!res.ok) throw new Error("refresh-failed");
     const t = await res.json();
@@ -309,6 +310,7 @@
     const a = store.get("auth", null);
     $("authState").textContent = a ? "Dropboxに接続済みです。" : "まだDropboxに接続していません。";
     $("keyOut").textContent = "";
+    $("appKey").value = appKey();
     $("settingsDialog").showModal();
   }
   function showView(v) {
@@ -325,7 +327,8 @@
     $("send").addEventListener("click", sendMemo);
     $("sync").addEventListener("click", sync);
     $("openSettings").addEventListener("click", openSettings);
-    $("connect").addEventListener("click", startAuth);
+    $("appKey").addEventListener("change", () => store.set("appKey", $("appKey").value.trim()));
+    $("connect").addEventListener("click", () => { store.set("appKey", $("appKey").value.trim() || appKey()); startAuth(); });
     $("disconnect").addEventListener("click", () => { store.del("auth"); openSettings(); renderOutbox(); });
     $("showKey").addEventListener("click", () => { const a = store.get("auth", null); $("keyOut").textContent = a ? a.refresh : "先にDropboxに接続してください。"; });
     $("newCase").addEventListener("click", () => { const f = $("newCaseForm"); f.reset(); f.caseId.value = nextCaseId(); $("newCaseDialog").showModal(); });
