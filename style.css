@@ -82,7 +82,7 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 .md li.ask-row::after { content: " ✎ 回答する"; color: var(--accent); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .ask-link { all: unset; cursor: pointer; text-decoration: underline; text-decoration-color: var(--line); }
 .ask-link::after { content: " ✎ 回答する"; color: var(--accent); font-size: 12px; font-weight: 600; text-decoration: none; display: inline-block; }
-/* 案件タブのメモ入力欄 */
-.case-editor { margin-bottom: 12px; }
-textarea.short { min-height: 9em; }
-.editor-foot .primary { white-space: nowrap; }
+/* 案件タブの案件さがし */
+.case-pick { position: relative; margin-bottom: 10px; }
+.case-pick input { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.pick-list { position: absolute; left: 0; right: 0; z-index: 5; margin-top: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 4px; box-shadow: 0 6px 18px rgba(0,0,0,.12); max-height: 60vh; }

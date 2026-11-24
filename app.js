@@ -259,21 +259,41 @@
     renderCases();
     renderCaseCard();
     renderTasks();
-    renderCaseEditor();
   }
 
-  // ---------- 案件タブのメモ入力欄（入力タブの欄と同じ下書き・種類を使う） ----------
-  function renderCaseEditor() {
-    const c = findCase(current);
-    $("caseEditor").hidden = !c;
-    if (!c) return;
-    $("caseEditorCase").textContent = c.general ? GENERAL.client + "（案件なし）" : caseLabel(c);
-    const src = $("memoType"), dst = $("caseMemoType");
-    dst.innerHTML = src.innerHTML;
-    dst.value = src.value; dst.disabled = src.disabled;
-    $("caseMemo").placeholder = c.general ? $("memo").placeholder : "ここに打ち込んで「受信箱へ送る」を押してください。\n入力タブと同じ下書きです（どちらで書いても続きから書けます）。";
-    if (document.activeElement !== $("caseMemo")) $("caseMemo").value = $("memo").value;
-    $("caseSend").disabled = $("send").disabled;
+  // ---------- 案件タブ: 番号か名前で案件を探して切り替える ----------
+  function renderCasePick() {
+    const q = $("casePick").value.trim().toLowerCase();
+    const list = $("casePickList");
+    list.innerHTML = "";
+    const all = [GENERAL].concat(cases);
+    const hits = all.filter((c) => {
+      if (!q) return !isHidden(c.id);
+      return [c.id, c.client, c.initials, c.crime].filter(Boolean).join(" ").toLowerCase().includes(q);
+    }).slice(0, 30);
+    if (!hits.length) {
+      const li = document.createElement("li"); li.className = "muted small"; li.textContent = "該当する案件はありません";
+      list.append(li);
+    }
+    for (const c of hits) {
+      const li = document.createElement("li");
+      const b = document.createElement("button");
+      b.type = "button";
+      b.setAttribute("aria-current", String(current === c.id));
+      b.textContent = c.general ? "✉ " + GENERAL.client : caseLabel(c);
+      if (!c.general && isHidden(c.id)) { const sub = document.createElement("span"); sub.className = "sub"; sub.textContent = "【終了・非表示】"; b.append(sub); }
+      // フォーカスが外れる前に選べるよう mousedown で拾う
+      b.addEventListener("mousedown", (e) => e.preventDefault());
+      b.addEventListener("click", () => pickCase(c.id));
+      li.append(b); list.append(li);
+    }
+    list.hidden = false;
+  }
+  function pickCase(id) {
+    selectCase(id);
+    $("casePick").value = "";
+    $("casePickList").hidden = true;
+    $("casePick").blur();
   }
 
   const MEMO_PLACEHOLDER = document.getElementById("memo").placeholder;
@@ -284,12 +304,9 @@
     if (!current) return;
     const v = $("memo").value;
     if (v) store.set("draft:" + current, v); else store.del("draft:" + current);
-    $("draftState").textContent = $("caseDraftState").textContent = v ? "下書きを端末に保存しました " + new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "";
+    $("draftState").textContent = v ? "下書きを端末に保存しました " + new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "";
   }
-  function updateSendState() {
-    $("send").disabled = !current || !$("memo").value.trim();
-    if ($("caseSend")) $("caseSend").disabled = $("send").disabled;
-  }
+  function updateSendState() { $("send").disabled = !current || !$("memo").value.trim(); }
 
   // ---------- 送信（オフライン時は送信待ちに積む） ----------
   const pad = (n) => String(n).padStart(2, "0");
@@ -395,10 +412,9 @@
     store.del("draft:" + current);
     if (current !== GENERAL.id) $("memoType").value = "自動判定";
     updateSendState();
-    $("draftState").textContent = $("caseDraftState").textContent = current === GENERAL.id
+    $("draftState").textContent = current === GENERAL.id
       ? "お知らせを送りました（次回の定時処理でClaudeが読み、「案件」タブの記録に載せます）"
       : "受信箱に送りました（次回の定時処理でClaudeが整理します）";
-    renderCaseEditor();
     await flushOutbox();
   }
 
@@ -561,7 +577,7 @@
         : `<h1>${esc(GENERAL.client)}</h1><p class="muted">まだ記録がありません。お知らせを送ると、次回の定時処理でClaudeが読み、ここに受け取った内容と対応を書きます。</p>`;
       return;
     }
-    if (!c) { tabs.innerHTML = ""; $("caseCard").innerHTML = '<p class="muted">入力タブで案件を選ぶと、ここに案件カードが表示されます。</p>'; return; }
+    if (!c) { tabs.innerHTML = ""; $("caseCard").innerHTML = '<p class="muted">上の欄に案件番号か名前を入れて、案件を選んでください。</p>'; return; }
     const folder = c.folder || c.id;
     const kinds = (store.get("noteIndex", {})[folder] || []).slice().sort((a, b) => NOTE_ORDER.indexOf(a) - NOTE_ORDER.indexOf(b));
     if (caseSub !== "card" && !kinds.includes(caseSub)) caseSub = "card";
@@ -591,7 +607,7 @@
     $("net").textContent = on ? "オンライン" : "オフライン";
     $("net").classList.toggle("off", !on);
   }
-  function alertBox(msg) { $("draftState").textContent = msg; $("caseDraftState").textContent = msg; }
+  function alertBox(msg) { $("draftState").textContent = msg; }
   function openSettings() {
     const a = store.get("auth", null);
     $("authState").textContent = a ? "Dropboxに接続済みです。" : "まだDropboxに接続していません。";
@@ -603,7 +619,7 @@
     for (const b of document.querySelectorAll(".tabs button")) b.setAttribute("aria-selected", String(b.dataset.view === v));
     for (const s of document.querySelectorAll(".view")) s.hidden = s.id !== "view-" + v;
     store.set("view", v);
-    if (v === "case") { renderCaseCard(); renderCaseEditor(); }
+    if (v === "case") renderCaseCard();
     if (v === "sent") { renderSent(); if (navigator.onLine && store.get("auth", null)) loadRemoteSent(); }
   }
 
@@ -611,20 +627,19 @@
   async function init() {
     for (const b of document.querySelectorAll(".tabs button")) b.addEventListener("click", () => showView(b.dataset.view));
     $("caseFilter").addEventListener("input", renderCases);
+    $("casePick").addEventListener("input", renderCasePick);
+    $("casePick").addEventListener("focus", renderCasePick);
+    $("casePick").addEventListener("blur", () => { $("casePickList").hidden = true; });
+    $("casePick").addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { $("casePickList").hidden = true; $("casePick").blur(); }
+      if (e.key === "Enter") { const b = $("casePickList").querySelector("button"); if (b) b.click(); }
+    });
     $("sentThisCase").addEventListener("change", renderSent);
     $("loadSent").addEventListener("click", loadRemoteSent);
     $("showHidden").addEventListener("change", renderCases);
     $("toggleHidden").addEventListener("click", toggleHidden);
     $("memo").addEventListener("input", () => { updateSendState(); clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 400); });
     $("send").addEventListener("click", sendMemo);
-    // 案件タブの入力欄: 打った内容を入力タブの欄にも写し、同じ下書きとして保存する
-    $("caseMemo").addEventListener("input", () => {
-      $("memo").value = $("caseMemo").value;
-      updateSendState(); clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 400);
-    });
-    $("caseMemoType").addEventListener("change", () => { $("memoType").value = $("caseMemoType").value; });
-    $("memoType").addEventListener("change", () => { $("caseMemoType").value = $("memoType").value; });
-    $("caseSend").addEventListener("click", () => { $("memo").value = $("caseMemo").value; $("memoType").value = $("caseMemoType").value; sendMemo(); });
     $("sync").addEventListener("click", sync);
     $("openSettings").addEventListener("click", openSettings);
     $("appKey").addEventListener("change", () => store.set("appKey", $("appKey").value.trim()));
