@@ -206,9 +206,14 @@
 
   // ---------- 新規案件 ----------
   function nextCaseId() {
-    const y = new Date().getFullYear();
-    const nums = cases.map((c) => (String(c.id).startsWith(y + "-") ? parseInt(String(c.id).slice(5), 10) : 0)).filter((n) => !isNaN(n));
-    return `${y}-${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, "0")}`;
+    // 事務所の番号（例: A000, A001）があれば、その続きを提案する
+    let best = null;
+    for (const c of cases) {
+      const m = String(c.id).match(/^([A-Za-z]+)(\d+)$/);
+      if (m && (!best || parseInt(m[2], 10) > best.n)) best = { p: m[1], n: parseInt(m[2], 10), w: m[2].length };
+    }
+    if (best) return best.p + String(best.n + 1).padStart(best.w, "0");
+    return "A001";
   }
 
   async function createCase(form) {
