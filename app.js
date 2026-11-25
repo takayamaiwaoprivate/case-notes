@@ -130,7 +130,9 @@
   // ダッシュボードの行は「A012 山田 示談書を作る」のように案件名が付くので、同じ案件の行に済の文が含まれていれば済とみなす
   const isDone = (text, caseId) => {
     const k = taskKey(text);
-    return doneTasks.some((d) => d.key === k || (caseId && d.caseId === caseId && d.key.length >= 4 && k.includes(d.key)));
+    // 逆向き（ダッシュボードで済にした長い行に、案件カードの宿題の文が含まれる）も同じ宿題とみなす
+    return doneTasks.some((d) => d.key === k || (caseId && d.caseId === caseId &&
+      ((d.key.length >= 4 && k.includes(d.key)) || (k.length >= 4 && d.key.includes(k)))));
   };
   async function markDone(caseId, text) {
     const key = taskKey(text);
@@ -143,8 +145,15 @@
     await flushOutbox();
   }
   // 表示した中の宿題の行に「済」ボタンを付ける。fixedId が無いときは行の中の案件番号から探す
+  // ダッシュボードの「宿題」欄は [ ] の付かない箇条書きなので、見出しに「宿題」を含む欄の行にも付ける
   function addDoneButtons(root, fixedId) {
-    for (const li of root.querySelectorAll("li.task")) {
+    const items = [];
+    let inTodo = false;
+    for (const el of root.querySelectorAll("h1,h2,h3,h4,li")) {
+      if (el.tagName !== "LI") { inTodo = /宿題|やるべきこと/.test(el.textContent); continue; }
+      if (el.classList.contains("task") || (inTodo && !el.classList.contains("ask-row"))) items.push(el);
+    }
+    for (const li of items) {
       if (li.dataset.done === "1") continue;
       const text = taskKey(li.textContent);
       const id = fixedId || findCaseIdIn(text);
@@ -163,7 +172,7 @@
     const todo = [], ask = [];
     for (const l of card.split("\n")) {
       const m = l.match(/^\s*[-*]\s+\[ \]\s+(.*)/);
-      if (m) { if (!isDone(m[1])) todo.push(m[1].trim()); }
+      if (m) { if (!isDone(m[1], id)) todo.push(m[1].trim()); }
       else if (l.includes("【要確認】")) ask.push(l.replace(/^\s*[-*]\s+/, "").replace("【要確認】", "").trim());
     }
     return { todo, ask };
