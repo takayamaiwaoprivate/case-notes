@@ -739,6 +739,8 @@
   const ACK_KINDS = [
     { re: /質問への回答|Claudeからの回答/, store: "ackAnswers", verb: "了解", done: "了解済み" },
     { re: /お知らせ/, store: "ackNotices", verb: "確認", done: "確認済み" },
+    // 「起案時間」欄も同じく「確認」で隠せる。定時整理が日時を移した行は文が変わるので、また表示される（先生の希望、2026-11-27）
+    { re: /起案時間/, store: "ackDrafting", verb: "確認", done: "確認済み" },
   ];
   const ackLists = {};
   for (const k of ACK_KINDS) ackLists[k.store] = store.get(k.store, []).filter((d) => Date.now() - d.at < 90 * 864e5); // 90日で忘れる
