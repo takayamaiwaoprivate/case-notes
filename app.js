@@ -666,29 +666,42 @@
     addJumpButtons($("dashboard"));
   }
   // ダッシュボードの上部に、各欄（今日の確認・期日・宿題・確認待ち・お知らせなど）へ飛ぶボタンを並べる
+  // 上部と同じボタンを一番下にも置き、下の段には「一番上へ」も付ける（先生の希望、2026-11-26）
   function addJumpButtons(root) {
     let heads = [...root.querySelectorAll("h2")];
     if (heads.length < 2) heads = [...root.querySelectorAll("h3")];
     if (heads.length < 2) return;
-    const nav = document.createElement("nav");
-    nav.className = "jump";
-    nav.setAttribute("aria-label", "欄へ移動");
-    heads.forEach((h, i) => {
+    const items = heads.map((h, i) => {
       h.id = "dash-sec-" + i;
       // 次の見出しまでの行数を数える
       let n = 0;
       for (let el = h.nextElementSibling; el && !heads.includes(el); el = el.nextElementSibling) {
         n += el.tagName === "LI" ? 1 : el.querySelectorAll("li").length;
       }
-      const label = h.textContent.replace(/[（(][^）)]*[）)]\s*$/, "").trim();
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = label + (n ? `（${n}）` : "");
-      if (/確認/.test(label) && n) b.classList.add("warn");
-      b.addEventListener("click", () => h.scrollIntoView({ behavior: "smooth", block: "start" }));
-      nav.append(b);
+      return { h, n, label: h.textContent.replace(/[（(][^）)]*[）)]\s*$/, "").trim() };
     });
-    root.prepend(nav);
+    const makeNav = (bottom) => {
+      const nav = document.createElement("nav");
+      nav.className = "jump" + (bottom ? " jump-bottom" : "");
+      nav.setAttribute("aria-label", "欄へ移動");
+      for (const { h, n, label } of items) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = label + (n ? `（${n}）` : "");
+        if (/確認/.test(label) && n) b.classList.add("warn");
+        b.addEventListener("click", () => h.scrollIntoView({ behavior: "smooth", block: "start" }));
+        nav.append(b);
+      }
+      if (bottom) {
+        const top = document.createElement("button");
+        top.type = "button"; top.className = "to-top"; top.textContent = "▲ 一番上へ";
+        top.addEventListener("click", () => root.scrollIntoView({ behavior: "smooth", block: "start" }));
+        nav.append(top);
+      }
+      return nav;
+    };
+    root.prepend(makeNav(false));
+    root.append(makeNav(true));
   }
   const NOTE_ORDER = ["接見", "依頼者との打合せ", "会議メモ", "期日メモ", "裁判所打合せ", "検察官とのやりとり", "面談", "電話", "検討メモ", "その他"];
   let caseSub = store.get("caseSub", "card");

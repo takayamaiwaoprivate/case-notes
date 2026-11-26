@@ -93,3 +93,5 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 .jump button { border: 1px solid var(--accent); color: var(--accent); background: transparent; border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer; }
 .jump button.warn { border-color: var(--warn); color: var(--warn); font-weight: 600; }
 .md h2, .md h3 { scroll-margin-top: 12px; }
+.jump-bottom { margin: 16px 0 0; padding-top: 12px; border-top: 1px solid var(--line); }
+.jump button.to-top { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
