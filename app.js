@@ -556,26 +556,71 @@
     await pushHidden();
   }
 
+  // 端末の保存領域がいっぱいのときは、Dropboxから読み直せる控え（整理済みメモの本文）を消して空きを作る
+  function freeSpace() {
+    const done = new Set(remoteSent.filter((r) => r.state === "整理済み").map((r) => r.name));
+    let freed = false;
+    sentLog = sentLog.map((l) => {
+      if (l.body != null && done.has(l.name)) { freed = true; return { ...l, body: null, path: (remoteSent.find((r) => r.name === l.name) || {}).path }; }
+      return l;
+    });
+    if (freed) store.set("sentLog", sentLog);
+    return freed;
+  }
+  function keep(key, value, problems) {
+    if (store.set(key, value)) return true;
+    if (freeSpace() && store.set(key, value)) return true;
+    problems.add("端末の保存領域がいっぱいで、一部を保存できませんでした");
+    return false;
+  }
+  function showSyncState(problems) {
+    const t = store.get("lastSync", null);
+    const when = t ? `最終同期 ${new Date(t).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : "まだ同期できていません";
+    const el = $("syncState");
+    el.textContent = problems && problems.size ? `同期できなかったものがあります: ${[...problems].join("／")}（${when}）` : when;
+    el.classList.toggle("warn", !!(problems && problems.size));
+  }
+
   async function sync() {
     if (!store.get("auth", null)) { openSettings(); return; }
     if (!navigator.onLine) { setNet(); return; }
     $("sync").disabled = true; $("sync").textContent = "同期中…";
+    $("syncState").textContent = "同期中…"; $("syncState").classList.remove("warn");
+    const problems = new Set();
+    const reason = (e) => {
+      const m = String(e && e.message || e);
+      if (m.includes("not-connected") || m.includes("refresh")) return "Dropboxへの接続が切れています。設定から接続し直してください";
+      if (m.includes("Failed to fetch") || m.includes("NetworkError") || m.includes("Load failed")) return "通信がとぎれました";
+      return m;
+    };
     try {
-      await flushOutbox();
+      try { await flushOutbox(); } catch (e) { problems.add("メモの送信（" + reason(e) + "）"); }
       const cj = await dbxDownload("/cases.json");
       if (cj) {
         const remote = JSON.parse(cj).cases || [];
         const ids = new Set(remote.map((c) => c.id));
         cases = remote.concat(cases.filter((c) => c.pending && !ids.has(c.id)));
-        store.set("cases", cases);
+        keep("cases", cases, problems);
       }
-      await syncHidden();
+      try { await syncHidden(); } catch (e) { problems.add("非表示の設定（" + reason(e) + "）"); }
       renderCases();
       if (current) selectCase(current);
-      const dash = await dbxDownload("/ダッシュボード.md");
-      if (dash != null) store.set("md:dashboard", dash);
-      const notice = await dbxDownload("/先生からのお知らせ.md");
-      if (notice != null) store.set("md:notice", notice);
+      // 1つ失敗しても残りは読み込む
+      const one = async (label, path, key) => {
+        try { const t = await dbxDownload(path); if (t != null) keep(key, t, problems); return t; }
+        catch (e) { problems.add(label + "（" + reason(e) + "）"); return null; }
+      };
+      await one("ダッシュボード", "/ダッシュボード.md", "md:dashboard");
+      await one("お知らせ", "/先生からのお知らせ.md", "md:notice");
+      // 案件カードを先に読む（ノートより大事なので、保存領域が足りないときもこちらを優先）
+      const failedCards = [];
+      await Promise.all(cases.filter((x) => !x.pending).map(async (c) => {
+        try {
+          const card = await dbxDownload(`/案件/${c.folder || c.id}/案件カード.md`);
+          if (card != null) keep("md:case:" + c.id, card, problems);
+        } catch (e) { failedCards.push(c.id); problems.add("案件カード（" + reason(e) + "）"); }
+      }));
+      if (failedCards.length) problems.add("読めなかった案件カード: " + failedCards.sort().join("、"));
       // 種類別ノート（接見メモなどを1つにまとめたもの）
       try {
         const notes = (await dbxList("/案件")).filter((e) => e[".tag"] === "file" && /\/ノート_[^/]+\.md$/.test(e.path_display));
@@ -583,20 +628,20 @@
         await Promise.all(notes.map(async (e) => {
           const parts = e.path_display.split("/"); const folder = parts[parts.length - 2];
           const kind = e.name.replace(/^ノート_/, "").replace(/\.md$/, "");
-          const t = await dbxDownload(e.path_display);
-          if (t != null) { (byFolder[folder] = byFolder[folder] || []).push(kind); store.set(`md:note:${folder}:${kind}`, t); }
+          try {
+            const t = await dbxDownload(e.path_display);
+            if (t != null) { (byFolder[folder] = byFolder[folder] || []).push(kind); keep(`md:note:${folder}:${kind}`, t, problems); }
+          } catch (err) { problems.add("ノート（" + reason(err) + "）"); }
         }));
-        store.set("noteIndex", byFolder);
-      } catch {}
-      await Promise.all(cases.filter((x) => !x.pending).map(async (c) => {
-        const card = await dbxDownload(`/案件/${c.folder || c.id}/案件カード.md`);
-        if (card != null) store.set("md:case:" + c.id, card);
-      }));
-      store.set("lastSync", Date.now());
+        keep("noteIndex", byFolder, problems);
+      } catch (e) { problems.add("ノートの一覧（" + reason(e) + "）"); }
+      if (!problems.size) store.set("lastSync", Date.now());
     } catch (e) {
-      if (String(e.message).includes("not-connected") || String(e.message).includes("refresh")) alertBox("Dropboxへの接続が切れています。設定から接続し直してください。");
+      problems.add(reason(e));
     } finally {
       $("sync").disabled = false; $("sync").textContent = "同期";
+      showSyncState(problems);
+      if (problems.size) alertBox("同期できなかったものがあります。画面上の赤い字をご覧ください。");
       renderCases(); renderDashboard(); renderCaseCard(); renderTasks(); setNet();
     }
   }
@@ -854,6 +899,7 @@
       navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadController) location.reload(); });
       navigator.serviceWorker.register("sw.js").then((r) => r.update()).catch(() => {});
     }
+    showSyncState();
     if (store.get("auth", null) && navigator.onLine) sync();
   }
   init();
