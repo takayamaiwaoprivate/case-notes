@@ -173,7 +173,7 @@
     for (const l of card.split("\n")) {
       const m = l.match(/^\s*[-*]\s+\[ \]\s+(.*)/);
       if (m) { if (!isDone(m[1], id)) todo.push(m[1].trim()); }
-      else if (l.includes("【要確認】")) ask.push(l.replace(/^\s*[-*]\s+/, "").replace("【要確認】", "").trim());
+      else if (l.includes("【要確認】") && !isAnswered(l, id)) ask.push(l.replace(/^\s*[-*]\s+/, "").replace("【要確認】", "").trim());
     }
     return { todo, ask };
   }
@@ -196,6 +196,21 @@
 
   // ---------- 確認待ちに答える（押すと入力画面で回答の準備をする） ----------
   const ANSWER_TYPE = "期限・起案時間の回答";
+  // 回答を送った確認待ちは、この端末ですぐ画面から消す（定時整理で確認待ちから外れるまでの間）。7日で忘れる
+  const askKey = (s) => taskKey(String(s).replace(/^\s*[-*]\s+/, "").replace(/【要確認】/g, ""));
+  let answeredAsks = store.get("answeredAsks", []).filter((d) => Date.now() - d.at < 7 * 864e5);
+  const isAnswered = (text, caseId) => {
+    const k = askKey(text);
+    if (!k) return false;
+    return answeredAsks.some((d) => d.key === k || ((!caseId || !d.caseId || d.caseId === caseId) &&
+      ((d.key.length >= 6 && k.includes(d.key)) || (k.length >= 6 && d.key.includes(k)))));
+  };
+  function rememberAnswers(caseId, body) {
+    const qs = [...body.matchAll(/（質問）(.+)/g)].map((m) => askKey(m[1])).filter(Boolean);
+    if (!qs.length) return;
+    for (const key of qs) answeredAsks.push({ key, caseId, at: Date.now() });
+    store.set("answeredAsks", answeredAsks);
+  }
   function openAnswer(id, question) {
     if (!findCase(id)) return;
     if (current !== id) selectCase(id);
@@ -230,6 +245,7 @@
       if (!text.includes("【要確認】") && !(!fixedId && section.includes("今日の確認"))) continue;
       const id = fixedId || findCaseIdIn(text);
       if (!id || id === GENERAL.id) continue;
+      if (isAnswered(text, id)) { el.remove(); continue; }
       el.classList.add("ask-row");
       el.title = "押すと、この案件の回答欄を開きます";
       el.tabIndex = 0;
@@ -455,6 +471,10 @@
     const body = $("memo").value;
     if (!current || !body.trim()) return;
     queueMemo(current, $("memoType").value, body);
+    if ($("memoType").value === ANSWER_TYPE) {
+      rememberAnswers(current, body);
+      renderDashboard(); renderCaseCard(); renderTasks();
+    }
     $("memo").value = "";
     store.del("draft:" + current);
     if (current !== GENERAL.id) $("memoType").value = "自動判定";
