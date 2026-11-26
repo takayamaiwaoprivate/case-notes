@@ -98,14 +98,37 @@
     return out;
   }
 
+  // Dropboxは同時にたくさん頼むと断ってくる（ブラウザでは「通信がとぎれた」ように見える）ので、
+  // 同時に読むのは数件までにし、断られたら少し待って読み直す
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  let active = 0; const queue = [];
+  async function limited(fn) {
+    if (active >= 3) await new Promise((r) => queue.push(r));
+    active++;
+    try { return await fn(); } finally { active--; const next = queue.shift(); if (next) next(); }
+  }
   async function dbxDownload(path) {
-    const res = await fetch("https://content.dropboxapi.com/2/files/download", {
-      method: "POST",
-      headers: { Authorization: "Bearer " + (await accessToken()), "Dropbox-API-Arg": apiArg({ path }) },
+    return limited(async () => {
+      for (let i = 0; ; i++) {
+        let res;
+        try {
+          res = await fetch("https://content.dropboxapi.com/2/files/download", {
+            method: "POST",
+            headers: { Authorization: "Bearer " + (await accessToken()), "Dropbox-API-Arg": apiArg({ path }) },
+          });
+        } catch (e) {
+          if (i < 4 && navigator.onLine) { await wait(800 * 2 ** i); continue; }
+          throw e;
+        }
+        if (res.status === 409) return null; // ファイルがまだない
+        if ((res.status === 429 || res.status >= 500) && i < 4) {
+          const ra = Number(res.headers.get("Retry-After")) || 0;
+          await wait(Math.max(ra * 1000, 800 * 2 ** i)); continue;
+        }
+        if (!res.ok) throw new Error("download " + res.status);
+        return await res.text();
+      }
     });
-    if (res.status === 409) return null; // ファイルがまだない
-    if (!res.ok) throw new Error("download " + res.status);
-    return await res.text();
   }
 
   // ---------- 状態 ----------
@@ -590,7 +613,7 @@
     const reason = (e) => {
       const m = String(e && e.message || e);
       if (m.includes("not-connected") || m.includes("refresh")) return "Dropboxへの接続が切れています。設定から接続し直してください";
-      if (m.includes("Failed to fetch") || m.includes("NetworkError") || m.includes("Load failed")) return "通信がとぎれました";
+      if (m.includes("Failed to fetch") || m.includes("NetworkError") || m.includes("Load failed")) return "Dropboxとの通信がとぎれました";
       return m;
     };
     try {
