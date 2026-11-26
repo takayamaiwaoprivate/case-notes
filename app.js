@@ -173,7 +173,7 @@
     for (const l of card.split("\n")) {
       const m = l.match(/^\s*[-*]\s+\[ \]\s+(.*)/);
       if (m) { if (!isDone(m[1], id)) todo.push(m[1].trim()); }
-      else if (l.includes("【要確認】")) ask.push(l.replace(/^\s*[-*]\s+/, "").replace("【要確認】", "").trim());
+      else if (l.includes("【要確認】") && !isAnswered(l, id)) ask.push(l.replace(/^\s*[-*]\s+/, "").replace("【要確認】", "").trim());
     }
     return { todo, ask };
   }
@@ -196,6 +196,21 @@
 
   // ---------- 確認待ちに答える（押すと入力画面で回答の準備をする） ----------
   const ANSWER_TYPE = "期限・起案時間の回答";
+  // 回答を送った確認待ちは、この端末ですぐ画面から消す（定時整理で確認待ちから外れるまでの間）。7日で忘れる
+  const askKey = (s) => taskKey(String(s).replace(/^\s*[-*]\s+/, "").replace(/【要確認】/g, ""));
+  let answeredAsks = store.get("answeredAsks", []).filter((d) => Date.now() - d.at < 7 * 864e5);
+  const isAnswered = (text, caseId) => {
+    const k = askKey(text);
+    if (!k) return false;
+    return answeredAsks.some((d) => d.key === k || ((!caseId || !d.caseId || d.caseId === caseId) &&
+      ((d.key.length >= 6 && k.includes(d.key)) || (k.length >= 6 && d.key.includes(k)))));
+  };
+  function rememberAnswers(caseId, body) {
+    const qs = [...body.matchAll(/（質問）(.+)/g)].map((m) => askKey(m[1])).filter(Boolean);
+    if (!qs.length) return;
+    for (const key of qs) answeredAsks.push({ key, caseId, at: Date.now() });
+    store.set("answeredAsks", answeredAsks);
+  }
   function openAnswer(id, question) {
     if (!findCase(id)) return;
     if (current !== id) selectCase(id);
@@ -230,6 +245,7 @@
       if (!text.includes("【要確認】") && !(!fixedId && section.includes("今日の確認"))) continue;
       const id = fixedId || findCaseIdIn(text);
       if (!id || id === GENERAL.id) continue;
+      if (isAnswered(text, id)) { el.remove(); continue; }
       el.classList.add("ask-row");
       el.title = "押すと、この案件の回答欄を開きます";
       el.tabIndex = 0;
@@ -455,6 +471,10 @@
     const body = $("memo").value;
     if (!current || !body.trim()) return;
     queueMemo(current, $("memoType").value, body);
+    if ($("memoType").value === ANSWER_TYPE) {
+      rememberAnswers(current, body);
+      renderDashboard(); renderCaseCard(); renderTasks();
+    }
     $("memo").value = "";
     store.del("draft:" + current);
     if (current !== GENERAL.id) $("memoType").value = "自動判定";
@@ -643,6 +663,32 @@
     $("dashboard").innerHTML = d ? md(boldCourtDates(dropHiddenCases(d))) + syncNote() : '<p class="muted">同期するとダッシュボードが表示されます。</p>';
     linkAsks($("dashboard"));
     addDoneButtons($("dashboard"));
+    addJumpButtons($("dashboard"));
+  }
+  // ダッシュボードの上部に、各欄（今日の確認・期日・宿題・確認待ち・お知らせなど）へ飛ぶボタンを並べる
+  function addJumpButtons(root) {
+    let heads = [...root.querySelectorAll("h2")];
+    if (heads.length < 2) heads = [...root.querySelectorAll("h3")];
+    if (heads.length < 2) return;
+    const nav = document.createElement("nav");
+    nav.className = "jump";
+    nav.setAttribute("aria-label", "欄へ移動");
+    heads.forEach((h, i) => {
+      h.id = "dash-sec-" + i;
+      // 次の見出しまでの行数を数える
+      let n = 0;
+      for (let el = h.nextElementSibling; el && !heads.includes(el); el = el.nextElementSibling) {
+        n += el.tagName === "LI" ? 1 : el.querySelectorAll("li").length;
+      }
+      const label = h.textContent.replace(/[（(][^）)]*[）)]\s*$/, "").trim();
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label + (n ? `（${n}）` : "");
+      if (/確認/.test(label) && n) b.classList.add("warn");
+      b.addEventListener("click", () => h.scrollIntoView({ behavior: "smooth", block: "start" }));
+      nav.append(b);
+    });
+    root.prepend(nav);
   }
   const NOTE_ORDER = ["接見", "依頼者との打合せ", "会議メモ", "期日メモ", "裁判所打合せ", "検察官とのやりとり", "面談", "電話", "検討メモ", "その他"];
   let caseSub = store.get("caseSub", "card");
