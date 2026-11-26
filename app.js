@@ -814,7 +814,7 @@
     root.prepend(makeNav(false));
     root.append(makeNav(true));
   }
-  const NOTE_ORDER = ["接見", "依頼者との打合せ", "会議メモ", "期日メモ", "裁判所打合せ", "検察官とのやりとり", "面談", "電話", "検討メモ", "進捗報告", "その他"];
+  const NOTE_ORDER = ["接見", "依頼者との打合せ", "会議メモ", "期日メモ", "裁判所打合せ", "検察官とのやりとり", "面談", "電話", "検討メモ", "活動記録", "その他"];
   let caseSub = store.get("caseSub", "card");
 
   function renderCaseCard() {
