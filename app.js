@@ -224,6 +224,8 @@
     let section = "";
     for (const el of root.querySelectorAll("h1,h2,h3,h4,li")) {
       if (el.tagName !== "LI") { section = el.textContent; continue; }
+      // 「お知らせ」欄の行は読むだけの連絡なので、【要確認】の文字があっても回答ボタンを付けない
+      if (section.includes("お知らせ")) continue;
       const text = el.textContent;
       if (!text.includes("【要確認】") && !(!fixedId && section.includes("今日の確認"))) continue;
       const id = fixedId || findCaseIdIn(text);
