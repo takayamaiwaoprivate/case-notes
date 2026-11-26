@@ -735,40 +735,49 @@
     addJumpButtons($("dashboard"));
   }
   // ダッシュボードの「質問への回答」の各項目に「了解」ボタンを付ける。押すと隠し、欄の下の「了解済みを表示」で見て「戻す」もできる（先生の希望、2026-11-26）
-  let ackAnswers = store.get("ackAnswers", []).filter((d) => Date.now() - d.at < 90 * 864e5); // 90日で忘れる
-  let showAcked = false;
-  const ackKey = (el) => taskKey(el.textContent.replace(/了解$|戻す$/, ""));
+  // 「お知らせ」欄も同じ仕組みで「確認」ボタンを付ける。確認済みは隠し、上部の件数からも外す。消さずに「確認済みを表示」で再表示できる（先生の希望、2026-11-26）
+  const ACK_KINDS = [
+    { re: /質問への回答|Claudeからの回答/, store: "ackAnswers", verb: "了解", done: "了解済み" },
+    { re: /お知らせ/, store: "ackNotices", verb: "確認", done: "確認済み" },
+  ];
+  const ackLists = {};
+  for (const k of ACK_KINDS) ackLists[k.store] = store.get(k.store, []).filter((d) => Date.now() - d.at < 90 * 864e5); // 90日で忘れる
+  const showAcked = {};
+  const ackKey = (el) => taskKey(el.textContent.replace(/(了解|確認|戻す)$/, ""));
   function addAckButtons(root) {
     for (const h of root.querySelectorAll("h2,h3")) {
-      if (!/質問への回答|Claudeからの回答/.test(h.textContent)) continue;
+      const kind = ACK_KINDS.find((k) => k.re.test(h.textContent));
+      if (!kind) continue;
       const lis = [];
       for (let el = h.nextElementSibling; el && !/^H[1-3]$/.test(el.tagName); el = el.nextElementSibling) {
         if (el.tagName === "UL" || el.tagName === "OL") lis.push(...[...el.children].filter((x) => x.tagName === "LI"));
       }
       if (!lis.length) continue;
+      const save = (list) => { ackLists[kind.store] = list; store.set(kind.store, list); renderDashboard(); };
       let nAck = 0, last = lis[lis.length - 1].parentElement;
       for (const li of lis) {
+        if (isNoneRow(li.textContent)) continue;
         const key = ackKey(li);
-        const acked = ackAnswers.some((d) => d.key === key);
+        const acked = ackLists[kind.store].some((d) => d.key === key);
         const b = document.createElement("button");
         b.type = "button"; b.className = "done-btn ack-btn";
         if (acked) {
           nAck++;
           li.classList.add("acked");
-          li.hidden = !showAcked;
-          b.textContent = "戻す"; b.title = "了解を取り消して、また表示する";
-          b.addEventListener("click", (e) => { e.stopPropagation(); ackAnswers = ackAnswers.filter((d) => d.key !== key); store.set("ackAnswers", ackAnswers); renderDashboard(); });
+          li.hidden = !showAcked[kind.store];
+          b.textContent = "戻す"; b.title = `${kind.verb}を取り消して、また表示する`;
+          b.addEventListener("click", (e) => { e.stopPropagation(); save(ackLists[kind.store].filter((d) => d.key !== key)); });
         } else {
-          b.textContent = "了解"; b.title = "読んで了解したら押す（画面から隠れます）";
-          b.addEventListener("click", (e) => { e.stopPropagation(); ackAnswers.push({ key, at: Date.now() }); store.set("ackAnswers", ackAnswers); renderDashboard(); });
+          b.textContent = kind.verb; b.title = `読んで${kind.verb}したら押す（画面から隠れます。あとで「${kind.done}を表示」で見られます）`;
+          b.addEventListener("click", (e) => { e.stopPropagation(); save(ackLists[kind.store].concat({ key, at: Date.now() })); });
         }
         li.append(" ", b);
       }
       if (nAck) {
         const t = document.createElement("button");
         t.type = "button"; t.className = "link-btn small";
-        t.textContent = showAcked ? "了解済みを隠す" : `了解済みを表示（${nAck}件）`;
-        t.addEventListener("click", () => { showAcked = !showAcked; renderDashboard(); });
+        t.textContent = showAcked[kind.store] ? `${kind.done}を隠す` : `${kind.done}を表示（${nAck}件）`;
+        t.addEventListener("click", () => { showAcked[kind.store] = !showAcked[kind.store]; renderDashboard(); });
         last.after(t);
       }
     }
@@ -787,7 +796,7 @@
       let n = 0;
       for (let el = h.nextElementSibling; el && !heads.includes(el); el = el.nextElementSibling) {
         const lis = el.tagName === "LI" ? [el] : [...el.querySelectorAll(":scope > li")];
-        n += lis.filter((li) => !li.hidden && !isNoneRow(li.textContent)).length;
+        n += lis.filter((li) => !li.hidden && !li.classList.contains("acked") && !isNoneRow(li.textContent)).length; // 了解済み・確認済みは数えない
       }
       return { h, n, label: h.textContent.replace(/[（(][^）)]*[）)]\s*$/, "").trim() };
     });
