@@ -154,7 +154,7 @@
       if (el.classList.contains("task") || (inTodo && !el.classList.contains("ask-row"))) items.push(el);
     }
     for (const li of items) {
-      if (li.dataset.done === "1") continue;
+      if (li.dataset.done === "1" || isNoneRow(li.textContent)) continue;
       const text = taskKey(li.textContent);
       const id = fixedId || findCaseIdIn(text);
       if (isDone(text, id)) { li.remove(); continue; }
@@ -707,6 +707,8 @@
   }
   // ダッシュボードの上部に、各欄（今日の確認・期日・宿題・確認待ち・お知らせなど）へ飛ぶボタンを並べる
   // 上部と同じボタンを一番下にも置き、下の段には「一番上へ」も付ける（先生の希望、2026-11-26）
+  // 「なし」「ありません」だけの行は件数に数えない（欄の表示と件数を合わせる）
+  const isNoneRow = (t) => /^[（(]?\s*(なし|特になし|該当なし|ありません|今のところありません|今のところなし|未対応なし)\s*[）)]?\s*[。．.]?\s*$/.test(taskKey(t).replace(/済$/, "").trim());
   function addJumpButtons(root) {
     let heads = [...root.querySelectorAll("h2")];
     if (heads.length < 2) heads = [...root.querySelectorAll("h3")];
@@ -716,7 +718,8 @@
       // 次の見出しまでの行数を数える
       let n = 0;
       for (let el = h.nextElementSibling; el && !heads.includes(el); el = el.nextElementSibling) {
-        n += el.tagName === "LI" ? (el.hidden ? 0 : 1) : el.querySelectorAll(":scope > li:not([hidden])").length;
+        const lis = el.tagName === "LI" ? [el] : [...el.querySelectorAll(":scope > li")];
+        n += lis.filter((li) => !li.hidden && !isNoneRow(li.textContent)).length;
       }
       return { h, n, label: h.textContent.replace(/[（(][^）)]*[）)]\s*$/, "").trim() };
     });
