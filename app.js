@@ -663,7 +663,47 @@
     $("dashboard").innerHTML = d ? md(boldCourtDates(dropHiddenCases(d))) + syncNote() : '<p class="muted">同期するとダッシュボードが表示されます。</p>';
     linkAsks($("dashboard"));
     addDoneButtons($("dashboard"));
+    addAckButtons($("dashboard"));
     addJumpButtons($("dashboard"));
+  }
+  // ダッシュボードの「質問への回答」の各項目に「了解」ボタンを付ける。押すと隠し、欄の下の「了解済みを表示」で見て「戻す」もできる（先生の希望、2026-11-26）
+  let ackAnswers = store.get("ackAnswers", []).filter((d) => Date.now() - d.at < 90 * 864e5); // 90日で忘れる
+  let showAcked = false;
+  const ackKey = (el) => taskKey(el.textContent.replace(/了解$|戻す$/, ""));
+  function addAckButtons(root) {
+    for (const h of root.querySelectorAll("h2,h3")) {
+      if (!/質問への回答|Claudeからの回答/.test(h.textContent)) continue;
+      const lis = [];
+      for (let el = h.nextElementSibling; el && !/^H[1-3]$/.test(el.tagName); el = el.nextElementSibling) {
+        if (el.tagName === "UL" || el.tagName === "OL") lis.push(...[...el.children].filter((x) => x.tagName === "LI"));
+      }
+      if (!lis.length) continue;
+      let nAck = 0, last = lis[lis.length - 1].parentElement;
+      for (const li of lis) {
+        const key = ackKey(li);
+        const acked = ackAnswers.some((d) => d.key === key);
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "done-btn ack-btn";
+        if (acked) {
+          nAck++;
+          li.classList.add("acked");
+          li.hidden = !showAcked;
+          b.textContent = "戻す"; b.title = "了解を取り消して、また表示する";
+          b.addEventListener("click", (e) => { e.stopPropagation(); ackAnswers = ackAnswers.filter((d) => d.key !== key); store.set("ackAnswers", ackAnswers); renderDashboard(); });
+        } else {
+          b.textContent = "了解"; b.title = "読んで了解したら押す（画面から隠れます）";
+          b.addEventListener("click", (e) => { e.stopPropagation(); ackAnswers.push({ key, at: Date.now() }); store.set("ackAnswers", ackAnswers); renderDashboard(); });
+        }
+        li.append(" ", b);
+      }
+      if (nAck) {
+        const t = document.createElement("button");
+        t.type = "button"; t.className = "link-btn small";
+        t.textContent = showAcked ? "了解済みを隠す" : `了解済みを表示（${nAck}件）`;
+        t.addEventListener("click", () => { showAcked = !showAcked; renderDashboard(); });
+        last.after(t);
+      }
+    }
   }
   // ダッシュボードの上部に、各欄（今日の確認・期日・宿題・確認待ち・お知らせなど）へ飛ぶボタンを並べる
   // 上部と同じボタンを一番下にも置き、下の段には「一番上へ」も付ける（先生の希望、2026-11-26）
@@ -676,7 +716,7 @@
       // 次の見出しまでの行数を数える
       let n = 0;
       for (let el = h.nextElementSibling; el && !heads.includes(el); el = el.nextElementSibling) {
-        n += el.tagName === "LI" ? 1 : el.querySelectorAll("li").length;
+        n += el.tagName === "LI" ? (el.hidden ? 0 : 1) : el.querySelectorAll(":scope > li:not([hidden])").length;
       }
       return { h, n, label: h.textContent.replace(/[（(][^）)]*[）)]\s*$/, "").trim() };
     });
