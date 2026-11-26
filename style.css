@@ -89,3 +89,7 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 /* 宿題の「済」ボタン */
 .done-btn { font-size: 12px; padding: 1px 8px; margin-left: 6px; border: 1px solid var(--ok); color: var(--ok); background: none; border-radius: 99px; cursor: pointer; vertical-align: 1px; }
 .done-btn:hover { background: var(--ok); color: var(--surface); }
+.jump { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.jump button { border: 1px solid var(--accent); color: var(--accent); background: transparent; border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer; }
+.jump button.warn { border-color: var(--warn); color: var(--warn); font-weight: 600; }
+.md h2, .md h3 { scroll-margin-top: 12px; }
