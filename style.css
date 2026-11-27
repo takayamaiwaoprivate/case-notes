@@ -113,3 +113,4 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 .ask-claude { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding-top: 8px; }
 mark { background: #ffe58a; color: #1d1d1d; border-radius: 2px; padding: 0 1px; }
 .md .hit-target { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.sent-lead { display: block; margin: 2px 0 0 4px; color: var(--ink); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
