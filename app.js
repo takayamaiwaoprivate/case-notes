@@ -626,6 +626,7 @@
         keep("cases", cases, problems);
       }
       try { await syncHidden(); } catch (e) { problems.add("非表示の設定（" + reason(e) + "）"); }
+      try { await syncAcks(); } catch (e) { problems.add("確認済みの記録（" + reason(e) + "）"); }
       renderCases();
       if (current) selectCase(current);
       // 1つ失敗しても残りは読み込む
@@ -742,10 +743,52 @@
     // 「起案時間」欄も同じく「確認」で隠せる。定時整理が日時を移した行は文が変わるので、また表示される（先生の希望、2026-11-27）
     { re: /起案時間/, store: "ackDrafting", verb: "確認", done: "確認済み" },
   ];
+  // 確認・了解の記録は Dropbox の /確認済み.json で端末間に共有する（スマホで確認したものがパソコンで再び出ないように。先生の希望、2026-11-27）
+  // 「戻す」は記録を消さず off にして残す（他の端末の古い記録で再び隠れないように）。新しい方が勝つ
+  const ACK_DAYS = 90; // 90日で忘れる
   const ackLists = {};
-  for (const k of ACK_KINDS) ackLists[k.store] = store.get(k.store, []).filter((d) => Date.now() - d.at < 90 * 864e5); // 90日で忘れる
+  const normAckKey = (k) => String(k).normalize("NFKC").replace(/\s+/g, "");
+  // 以前の版で保存した記録も、同じ形に直して使う
+  const freshAcks = (a) => (Array.isArray(a) ? a : []).filter((d) => d && d.key && Date.now() - d.at < ACK_DAYS * 864e5).map((d) => ({ ...d, key: normAckKey(d.key) }));
+  for (const k of ACK_KINDS) ackLists[k.store] = freshAcks(store.get(k.store, []));
+  let ackDirty = store.get("ackDirty", false);
   const showAcked = {};
-  const ackKey = (el) => taskKey(el.textContent.replace(/(了解|確認|戻す)$/, ""));
+  // 全角・半角や空白の違いでは別物にしない
+  const ackKey = (el) => normAckKey(taskKey(el.textContent.replace(/(了解|確認|戻す)$/, "")));
+  const isAcked = (storeKey, key) => ackLists[storeKey].some((d) => d.key === key && !d.off);
+  function setAck(storeKey, key, on) {
+    ackLists[storeKey] = ackLists[storeKey].filter((d) => d.key !== key).concat({ key, at: Date.now(), ...(on ? {} : { off: true }) });
+    store.set(storeKey, ackLists[storeKey]);
+    ackDirty = true; store.set("ackDirty", true);
+    renderDashboard();
+    pushAcks();
+  }
+  function mergeAcks(a, b) {
+    const m = new Map();
+    for (const d of freshAcks(a).concat(freshAcks(b))) { const o = m.get(d.key); if (!o || d.at > o.at) m.set(d.key, d); }
+    return [...m.values()];
+  }
+  async function pushAcks() {
+    if (!ackDirty || !store.get("auth", null) || !navigator.onLine) return;
+    try {
+      const out = {};
+      for (const k of ACK_KINDS) out[k.store] = ackLists[k.store];
+      await dbxUpload("/確認済み.json", JSON.stringify(out), true);
+      ackDirty = false; store.set("ackDirty", false);
+    } catch {}
+  }
+  async function syncAcks() {
+    const t = await dbxDownload("/確認済み.json");
+    const remote = t ? JSON.parse(t) : {};
+    for (const k of ACK_KINDS) {
+      const merged = mergeAcks(ackLists[k.store], remote[k.store]);
+      const same = JSON.stringify(freshAcks(remote[k.store]).map((d) => [d.key, d.at, !!d.off]).sort()) === JSON.stringify(merged.map((d) => [d.key, d.at, !!d.off]).sort());
+      if (!same) ackDirty = true;
+      ackLists[k.store] = merged; store.set(k.store, merged);
+    }
+    store.set("ackDirty", ackDirty);
+    await pushAcks();
+  }
   function addAckButtons(root) {
     for (const h of root.querySelectorAll("h2,h3")) {
       const kind = ACK_KINDS.find((k) => k.re.test(h.textContent));
@@ -755,12 +798,11 @@
         if (el.tagName === "UL" || el.tagName === "OL") lis.push(...[...el.children].filter((x) => x.tagName === "LI"));
       }
       if (!lis.length) continue;
-      const save = (list) => { ackLists[kind.store] = list; store.set(kind.store, list); renderDashboard(); };
       let nAck = 0, last = lis[lis.length - 1].parentElement;
       for (const li of lis) {
         if (isNoneRow(li.textContent)) continue;
         const key = ackKey(li);
-        const acked = ackLists[kind.store].some((d) => d.key === key);
+        const acked = isAcked(kind.store, key);
         const b = document.createElement("button");
         b.type = "button"; b.className = "done-btn ack-btn";
         if (acked) {
@@ -768,10 +810,10 @@
           li.classList.add("acked");
           li.hidden = !showAcked[kind.store];
           b.textContent = "戻す"; b.title = `${kind.verb}を取り消して、また表示する`;
-          b.addEventListener("click", (e) => { e.stopPropagation(); save(ackLists[kind.store].filter((d) => d.key !== key)); });
+          b.addEventListener("click", (e) => { e.stopPropagation(); setAck(kind.store, key, false); });
         } else {
           b.textContent = kind.verb; b.title = `読んで${kind.verb}したら押す（画面から隠れます。あとで「${kind.done}を表示」で見られます）`;
-          b.addEventListener("click", (e) => { e.stopPropagation(); save(ackLists[kind.store].concat({ key, at: Date.now() })); });
+          b.addEventListener("click", (e) => { e.stopPropagation(); setAck(kind.store, key, true); });
         }
         li.append(" ", b);
       }
