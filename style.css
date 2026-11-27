@@ -79,6 +79,7 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 /* 確認待ち: 押すと回答欄を開く */
 .md li.ask-row { cursor: pointer; border-radius: 6px; padding: 2px 4px; margin-left: -4px; }
 .md li.ask-row:hover, .md li.ask-row:focus { background: var(--sel, rgba(47,74,109,.08)); outline: none; }
+.md li.answered-row { color: var(--muted, #667); }
 .md li.ask-row::after { content: " ✎ 回答する"; color: var(--accent); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .ask-link { all: unset; cursor: pointer; text-decoration: underline; text-decoration-color: var(--line); }
 .ask-link::after { content: " ✎ 回答する"; color: var(--accent); font-size: 12px; font-weight: 600; text-decoration: none; display: inline-block; }
