@@ -157,8 +157,13 @@
     return doneTasks.some((d) => d.key === k || (caseId && d.caseId === caseId &&
       ((d.key.length >= 4 && k.includes(d.key)) || (k.length >= 4 && d.key.includes(k)))));
   };
+  const reloadDone = () => {
+    const keys = new Set(doneTasks.map((d) => d.key));
+    doneTasks = doneTasks.concat(store.get("doneTasks", []).filter((d) => d && d.key && !keys.has(d.key) && Date.now() - d.at < 60 * 864e5));
+  };
   async function markDone(caseId, text) {
     const key = taskKey(text);
+    reloadDone();
     if (!key || isDone(key)) return;
     doneTasks.push({ key, caseId, at: Date.now() });
     store.set("doneTasks", doneTasks);
@@ -221,18 +226,37 @@
   const ANSWER_TYPE = "期限・起案時間の回答";
   // 回答を送った確認待ちは、この端末ですぐ画面から消す（定時整理で確認待ちから外れるまでの間）。7日で忘れる
   const askKey = (s) => taskKey(String(s).replace(/^\s*[-*]\s+/, "").replace(/【要確認】/g, ""));
-  let answeredAsks = store.get("answeredAsks", []).filter((d) => Date.now() - d.at < 7 * 864e5);
+  // 同じ端末でアプリを2つの窓（タブ）で開いていても食い違わないよう、記録はいつも端末の保存から読み直す（2026-11-27）
+  const freshAnswers = (a) => (Array.isArray(a) ? a : []).filter((d) => d && d.key && Date.now() - d.at < 7 * 864e5);
+  let answeredAsks = freshAnswers(store.get("answeredAsks", []));
+  const reloadAnswered = () => {
+    const seen = new Set(answeredAsks.map((d) => d.caseId + "\n" + d.key));
+    answeredAsks = freshAnswers(answeredAsks.concat(freshAnswers(store.get("answeredAsks", [])).filter((d) => !seen.has(d.caseId + "\n" + d.key))));
+  };
+  // 全角・半角、空白、句読点の違いでは別の質問にしない
+  const askNorm = (s) => String(s).normalize("NFKC").replace(/[\s。、．，.,]/g, "");
   const isAnswered = (text, caseId) => {
-    const k = askKey(text);
+    const k = askNorm(askKey(text));
     if (!k) return false;
-    return answeredAsks.some((d) => d.key === k || ((!caseId || !d.caseId || d.caseId === caseId) &&
-      ((d.key.length >= 6 && k.includes(d.key)) || (k.length >= 6 && d.key.includes(k)))));
+    return answeredAsks.some((d) => {
+      const dk = askNorm(d.key);
+      return dk === k || ((!caseId || !d.caseId || d.caseId === caseId) &&
+        ((dk.length >= 6 && k.includes(dk)) || (k.length >= 6 && dk.includes(k))));
+    });
   };
   function rememberAnswers(caseId, body) {
-    const qs = [...body.matchAll(/（質問）(.+)/g)].map((m) => askKey(m[1])).filter(Boolean);
+    const qs = [...String(body).matchAll(/[（(]質問[）)]\s*(.+)/g)].map((m) => askKey(m[1])).filter(Boolean);
     if (!qs.length) return;
-    for (const key of qs) answeredAsks.push({ key, caseId, at: Date.now() });
+    reloadAnswered();
+    for (const key of qs) if (!answeredAsks.some((d) => d.key === key && d.caseId === caseId)) answeredAsks.push({ key, caseId, at: Date.now() });
     store.set("answeredAsks", answeredAsks);
+  }
+  // この端末から送った回答の控えからも覚え直す（保存がうまくいかなかったときの備え）
+  function learnAnswersFromSent() {
+    for (const l of sentLog) {
+      if (l.type !== ANSWER_TYPE || !l.body || Date.now() - new Date(l.at).getTime() > 7 * 864e5) continue;
+      rememberAnswers(l.caseId, l.body);
+    }
   }
   // 受信箱にある「確認待ちへの回答」（どの端末から送ったものでも）を読み、答えた質問を覚える
   async function learnAnswersFromInbox() {
@@ -357,6 +381,7 @@
     $("toggleHidden").hidden = !c || gen;
     $("toggleHidden").textContent = c && isHidden(c.id) ? "再表示する" : "終了（非表示）";
     $("memo").value = store.get("draft:" + id, "");
+    if ($("caseSearch")) { $("caseSearch").value = ""; $("caseSearchOut").hidden = true; }
     updateSendState();
     renderCases();
     renderCaseCard();
@@ -644,6 +669,7 @@
       try { await syncHidden(); } catch (e) { problems.add("非表示の設定（" + reason(e) + "）"); }
       try { await syncAcks(); } catch (e) { problems.add("確認済みの記録（" + reason(e) + "）"); }
       // 別の端末で答えた確認待ちも、この端末で消す（受信箱にある未整理の回答を読む）
+      reloadAnswered(); reloadDone();
       try { await learnAnswersFromInbox(); } catch {}
       renderCases();
       if (current) selectCase(current);
@@ -902,6 +928,7 @@
   function renderCaseCard() {
     const c = cases.find((x) => x.id === current);
     const tabs = $("caseSubTabs");
+    $("caseSearchBox").hidden = !c;
     if (current === GENERAL.id) {
       tabs.innerHTML = ""; $("caseCard").classList.remove("note");
       const n = store.get("md:notice", null);
@@ -930,8 +957,122 @@
       addDoneButtons($("caseCard"), c.id);
     } else {
       $("caseCard").innerHTML = md(store.get(`md:note:${folder}:${caseSub}`, "")) + '<p id="noteEnd" class="muted small">― ここまで ―</p>' + syncNote();
-      requestAnimationFrame(() => { const e = $("noteEnd"); if (e && !$("view-case").hidden) e.scrollIntoView({ block: "end" }); });
+      if (!pendingHit) requestAnimationFrame(() => { const e = $("noteEnd"); if (e && !$("view-case").hidden) e.scrollIntoView({ block: "end" }); });
     }
+    showPendingHit();
+  }
+
+  // ---------- 案件タブ: この案件の中（案件カードと各メモ）を検索する ----------
+  // 言葉をスペースで区切ると、すべてを含む欄だけを出す。端末に保存済みの内容を探すのでオフラインでも使える。
+  // 結果を押すと、そのカード・メモを開いて該当箇所に移動し、言葉に色を付ける（先生の希望、2026-11-27）
+  const norm = (s) => s.normalize("NFKC").toLowerCase();
+  const searchTerms = () => norm($("caseSearch").value).split(/\s+/).filter(Boolean);
+  let pendingHit = null;
+  function caseDocs(c) {
+    const folder = c.folder || c.id;
+    const kinds = (store.get("noteIndex", {})[folder] || []).slice().sort((a, b) => NOTE_ORDER.indexOf(a) - NOTE_ORDER.indexOf(b));
+    const docs = [{ sub: "card", label: "案件カード", text: store.get("md:case:" + c.id, "") || "" }];
+    for (const k of kinds) docs.push({ sub: k, label: k + (k.endsWith("メモ") ? "" : "メモ"), text: store.get(`md:note:${folder}:${k}`, "") || "" });
+    return docs;
+  }
+  const plain = (l) => l.replace(/^\s*(#{1,4}\s+|[-*]\s+(\[ \]\s+)?)/, "").replace(/\*\*/g, "").replace(/^\s*\||\|\s*$/g, "").replace(/\s*\|\s*/g, "　").trim();
+  function markTerms(text, terms) {
+    let html = esc(text);
+    for (const t of terms) {
+      const re = new RegExp(esc(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+      html = html.replace(/(<mark>.*?<\/mark>)|([^<]+)/g, (m, mk, txt) => mk || txt.replace(re, (x) => `<mark>${x}</mark>`));
+    }
+    return html;
+  }
+  function renderCaseSearch() {
+    const out = $("caseSearchOut");
+    const c = cases.find((x) => x.id === current);
+    const terms = searchTerms();
+    if (!c || !terms.length) { out.hidden = true; out.innerHTML = ""; return; }
+    const hits = [];
+    for (const d of caseDocs(c)) {
+      // 見出しごとに区切り、区切りの中にすべての言葉があれば当たりとする
+      let sec = { head: "", lines: [] };
+      const secs = [sec];
+      for (const l of d.text.replace(/\r/g, "").split("\n")) {
+        if (/^\s*[-*]\s+\[x\]/i.test(l) || /^\s*\|[\s\-:|]+\|\s*$/.test(l) || !l.trim()) continue; // 済の宿題・表の区切り線・空行は除く
+        if (/^#{1,4}\s/.test(l)) { sec = { head: plain(l), lines: [] }; secs.push(sec); continue; }
+        sec.lines.push(plain(l));
+      }
+      for (const s of secs) {
+        const all = norm([s.head].concat(s.lines).join("\n"));
+        if (!terms.every((t) => all.includes(t))) continue;
+        let lines = s.lines.filter((l) => terms.some((t) => norm(l).includes(t)));
+        if (!lines.length) lines = s.lines.slice(0, 1);
+        hits.push({ d, head: s.head, lines: lines.slice(0, 3), more: Math.max(0, lines.length - 3) });
+      }
+    }
+    out.innerHTML = "";
+    const head = document.createElement("p");
+    head.className = "muted small";
+    head.textContent = hits.length ? `${hits.length}か所見つかりました。押すとその場所を開きます。` : "見つかりませんでした。言葉を短くするか、別の言い方で試してください。";
+    out.append(head);
+    for (const h of hits.slice(0, 50)) {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "hit";
+      b.innerHTML = `<span class="hit-src">${esc(h.d.label)}${h.head ? "　›　" + markTerms(h.head, terms) : ""}</span>`
+        + h.lines.map((l) => `<span class="hit-line">${markTerms(l.length > 140 ? l.slice(0, 140) + "…" : l, terms)}</span>`).join("")
+        + (h.more ? `<span class="muted small">ほか${h.more}行</span>` : "");
+      b.addEventListener("click", () => {
+        caseSub = h.d.sub; store.set("caseSub", caseSub);
+        pendingHit = { head: h.head, line: h.lines[0] || "", terms };
+        out.hidden = true;
+        renderCaseCard();
+      });
+      out.append(b);
+    }
+    // キーワードで探しにくい、ざっくりした質問はClaudeへ（次の定時整理で回答）
+    const ask = document.createElement("div");
+    ask.className = "ask-claude";
+    const q = $("caseSearch").value.trim();
+    const ab = document.createElement("button");
+    ab.type = "button"; ab.className = "ghost small";
+    ab.textContent = "この言葉でClaudeに質問する";
+    ab.addEventListener("click", () => askClaudeAbout(c.id, q));
+    const note = document.createElement("span");
+    note.className = "muted small";
+    note.textContent = "「保釈の話はどうなっていた？」のような、ざっくりした質問はこちらへ。次の定時整理でメモ全体を読んで答えます（急ぎはチャットで）。";
+    ask.append(ab, note);
+    out.append(ask);
+    out.hidden = false;
+  }
+  function askClaudeAbout(id, q) {
+    showView("input");
+    if (current !== id) selectCase(id);
+    $("memoType").value = "Claudeへの質問";
+    const memo = $("memo");
+    memo.value = (memo.value.trim() ? memo.value.replace(/\s+$/, "") + "\n\n" : "") + "（質問）" + q;
+    memo.focus();
+    memo.setSelectionRange(memo.value.length, memo.value.length);
+    updateSendState(); saveDraft();
+  }
+  // 検索結果から開いたとき、該当箇所まで移動して言葉に色を付ける
+  function showPendingHit() {
+    const h = pendingHit; pendingHit = null;
+    if (!h) return;
+    const root = $("caseCard");
+    const els = [...root.querySelectorAll("h1,h2,h3,h4,p,li,tr")];
+    const key = (s) => norm(s).replace(/\s+/g, "");
+    const want = key(h.line.replace(/…$/, "")).slice(0, 40);
+    let target = want && els.find((e) => key(e.textContent).includes(want));
+    if (!target && h.head) target = els.find((e) => /^H/.test(e.tagName) && key(e.textContent).includes(key(h.head)));
+    if (!target) return;
+    for (const e of target.tagName === "TR" ? target.querySelectorAll("td,th") : [target]) {
+      const walk = document.createTreeWalker(e, NodeFilter.SHOW_TEXT);
+      const nodes = []; while (walk.nextNode()) nodes.push(walk.currentNode);
+      for (const n of nodes) {
+        const span = document.createElement("span");
+        span.innerHTML = markTerms(n.nodeValue, h.terms);
+        if (span.querySelector("mark")) n.replaceWith(...span.childNodes);
+      }
+    }
+    target.classList.add("hit-target");
+    requestAnimationFrame(() => target.scrollIntoView({ behavior: "smooth", block: "center" }));
   }
 
   // ---------- その他の画面要素 ----------
@@ -967,6 +1108,9 @@
       if (e.key === "Escape") { $("casePickList").hidden = true; $("casePick").blur(); }
       if (e.key === "Enter") { const b = $("casePickList").querySelector("button"); if (b) b.click(); }
     });
+    $("caseSearch").addEventListener("input", renderCaseSearch);
+    $("caseSearch").addEventListener("focus", () => { if ($("caseSearch").value.trim()) renderCaseSearch(); });
+    $("caseSearch").addEventListener("keydown", (e) => { if (e.key === "Escape") { $("caseSearch").value = ""; renderCaseSearch(); } });
     $("sentThisCase").addEventListener("change", renderSent);
     $("loadSent").addEventListener("click", loadRemoteSent);
     $("showHidden").addEventListener("change", renderCases);
@@ -998,10 +1142,23 @@
       if (Date.now() - (store.get("lastSync", 0) || 0) >= 10 * 60e3) sync();
     };
     document.addEventListener("visibilitychange", autoSync);
+    // 別の窓（タブ）で回答・済にしたら、この窓の表示もすぐ直す
+    window.addEventListener("storage", (e) => {
+      if (e.key !== "cn:answeredAsks" && e.key !== "cn:doneTasks") return;
+      reloadAnswered(); reloadDone();
+      renderCases(); renderDashboard(); renderCaseCard(); renderTasks();
+    });
+    // 窓に戻ったときも、同期の有無にかかわらず回答・済の記録を読み直して表示を直す
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) return;
+      reloadAnswered(); reloadDone();
+      renderCases(); renderDashboard(); renderCaseCard(); renderTasks();
+    });
     setInterval(autoSync, 30 * 60e3);
 
     setNet();
     try { await finishAuth(); } catch {}
+    learnAnswersFromSent();
     renderCases(); renderDashboard(); renderOutbox();
     if (current) selectCase(current);
     showView(store.get("view", "input"));

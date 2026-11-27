@@ -102,3 +102,14 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 .syncstate { margin: 0; padding: 4px 16px; }
 .syncstate.warn { color: var(--warn); font-weight: 600; }
 .md .ack-all { display: inline-block; margin: 0 0 6px; }
+/* 案件の中の検索 */
+.case-search { margin: 0 0 10px; }
+.case-search input { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: inherit; font: inherit; }
+.search-out { margin-top: 6px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: var(--surface); max-height: 60vh; overflow: auto; }
+.search-out .hit { display: block; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line); padding: 8px 4px; cursor: pointer; color: inherit; font: inherit; }
+.search-out .hit:hover { background: var(--sel, rgba(0,0,0,.04)); }
+.hit-src { display: block; font-size: 12px; color: var(--accent); font-weight: 600; margin-bottom: 2px; }
+.hit-line { display: block; font-size: 14px; line-height: 1.5; }
+.ask-claude { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding-top: 8px; }
+mark { background: #ffe58a; color: #1d1d1d; border-radius: 2px; padding: 0 1px; }
+.md .hit-target { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
