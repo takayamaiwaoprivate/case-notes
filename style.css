@@ -100,3 +100,4 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 
 .syncstate { margin: 0; padding: 4px 16px; }
 .syncstate.warn { color: var(--warn); font-weight: 600; }
+.md .ack-all { display: inline-block; margin: 0 0 6px; }
