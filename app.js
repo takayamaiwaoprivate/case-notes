@@ -484,20 +484,21 @@
   const fmtAt = (at) => { if (!at) return ""; const d = new Date(at.replace(" ", "T")); return isNaN(d) ? at : `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 
   async function loadRemoteSent() {
-    $("sentState").textContent = "Dropboxから読み込み中…";
+    const setState = (t) => { $("sentState").textContent = t; const e = $("caseSentState"); if (e) e.textContent = t; };
+    setState("Dropboxから読み込み中…");
     try {
       const inbox = (await dbxList(INBOX)).filter((e) => e[".tag"] === "file");
       const done = (await dbxList("/案件")).filter((e) => e[".tag"] === "file" && /\/メモ原本\//.test(e.path_display));
       remoteSent = inbox.map((e) => ({ name: e.name, path: e.path_display, state: "未整理" }))
         .concat(done.map((e) => ({ name: e.name, path: e.path_display, state: "整理済み" })));
       store.set("remoteSent", remoteSent);
-      $("sentState").textContent = "";
-    } catch { $("sentState").textContent = "読み込めませんでした。オンラインか、Dropboxに接続しているか確認してください。"; }
+      setState("");
+    } catch { setState("読み込めませんでした。オンラインか、Dropboxに接続しているか確認してください。"); }
     renderSent();
   }
 
-  function renderSent() {
-    const onlyCase = $("sentThisCase").checked && current;
+  // 送信済みの一覧。onlyId を渡すとその案件のものだけ（「案件」タブの「送信済み」ボタンでも使う、2026-11-27）
+  function sentRows(onlyId) {
     const pendingNames = new Set(outbox.map((o) => o.path.split("/").pop()));
     const remote = new Map(remoteSent.map((r) => [r.name, r]));
     const rows = new Map();
@@ -507,21 +508,34 @@
       rows.set(r.name, { name: r.name, path: r.path, state: r.state, caseId: m ? m[4] : "", at: m ? `${m[1].slice(0,4)}-${m[1].slice(4,6)}-${m[1].slice(6)} ${m[2]}:${m[3]}` : "", type: "", body: null });
     }
     let list = [...rows.values()].sort((a, b) => (b.name > a.name ? 1 : -1));
-    if (onlyCase) list = list.filter((x) => x.caseId === current.replace(/[^0-9A-Za-z\-]/g, "_") || x.caseId === current);
-    const box = $("sentList"); box.innerHTML = "";
+    if (onlyId) list = list.filter((x) => x.caseId === onlyId.replace(/[^0-9A-Za-z\-]/g, "_") || x.caseId === onlyId);
+    return list;
+  }
+
+  // 本文の冒頭（一覧で件名代わりに出す）
+  const leadOf = (b) => { if (b == null) return ""; const t = b.replace(/\s+/g, " ").trim(); return t.length > 40 ? t.slice(0, 40) + "…" : t; };
+  function fillSentList(box, list, showCase) {
+    box.innerHTML = "";
     if (!list.length) { box.innerHTML = '<p class="muted small">まだありません。</p>'; return; }
     for (const x of list.slice(0, 200)) {
       const c = findCase(x.caseId);
       const d = document.createElement("details"); d.className = "sent";
-      d.innerHTML = `<summary><span class="st st-${x.state}">${esc(x.state)}</span> ${esc(fmtAt(x.at))}　${esc(c ? caseLabel(c) : x.caseId || "")}　<span class="muted">${esc(x.type || "")}</span></summary><pre class="memo-body">${x.body != null ? esc(x.body) : "（開くと読み込みます）"}</pre>`;
+      d.innerHTML = `<summary><span class="st st-${x.state}">${esc(x.state)}</span> ${esc(fmtAt(x.at))}${showCase ? "　" + esc(c ? caseLabel(c) : x.caseId || "") : ""}　<span class="muted">${esc(x.type || "")}</span>${showCase ? "" : `<span class="sent-lead">${esc(leadOf(x.body))}</span>`}</summary><pre class="memo-body">${x.body != null ? esc(x.body) : "（開くと読み込みます）"}</pre>`;
       if (x.body == null && x.path) d.addEventListener("toggle", async () => {
         if (!d.open || d.dataset.loaded) return;
         try { const t = await dbxDownload(x.path); const p = parseMemo(t || ""); d.dataset.loaded = "1";
-          d.querySelector("pre").textContent = p.body; if (p.head["種類"]) d.querySelector("summary .muted").textContent = p.head["種類"];
+          d.querySelector("pre").textContent = p.body; const ld = d.querySelector(".sent-lead"); if (ld) ld.textContent = leadOf(p.body); if (p.head["種類"]) d.querySelector("summary .muted").textContent = p.head["種類"];
         } catch { d.querySelector("pre").textContent = "読み込めませんでした（オフラインかもしれません）。"; }
       });
       box.append(d);
     }
+  }
+
+  function renderSent() {
+    const onlyCase = $("sentThisCase").checked && current;
+    fillSentList($("sentList"), sentRows(onlyCase || null), true);
+    // 案件タブで「送信済み」を開いているときは、そちらも新しくする
+    if (caseSub === "sent" && !$("view-case").hidden && $("caseSentList")) renderCaseCard();
   }
 
   function renderOutbox() {
@@ -939,17 +953,27 @@
     if (!c) { tabs.innerHTML = ""; $("caseCard").innerHTML = '<p class="muted">上の欄に案件番号か名前を入れて、案件を選んでください。</p>'; return; }
     const folder = c.folder || c.id;
     const kinds = (store.get("noteIndex", {})[folder] || []).slice().sort((a, b) => NOTE_ORDER.indexOf(a) - NOTE_ORDER.indexOf(b));
-    if (caseSub !== "card" && !kinds.includes(caseSub)) caseSub = "card";
+    if (caseSub !== "card" && caseSub !== "sent" && !kinds.includes(caseSub)) caseSub = "card";
     tabs.innerHTML = "";
-    for (const k of ["card"].concat(kinds)) {
+    for (const k of ["card"].concat(kinds, ["sent"])) {
       const b = document.createElement("button");
-      b.type = "button"; b.textContent = k === "card" ? "案件カード" : k + (k.endsWith("メモ") ? "" : "メモ");
+      b.type = "button"; b.textContent = k === "card" ? "案件カード" : k === "sent" ? "送信済み" : k + (k.endsWith("メモ") ? "" : "メモ");
       b.setAttribute("aria-pressed", String(k === caseSub));
-      b.addEventListener("click", () => { caseSub = k; store.set("caseSub", k); renderCaseCard(); });
+      b.addEventListener("click", () => {
+        caseSub = k; store.set("caseSub", k); renderCaseCard();
+        if (k === "sent" && navigator.onLine && store.get("auth", null)) loadRemoteSent();
+      });
       tabs.append(b);
     }
-    $("caseCard").classList.toggle("note", caseSub !== "card");
-    if (caseSub === "card") {
+    $("caseCard").classList.toggle("note", caseSub !== "card" && caseSub !== "sent");
+    if (caseSub === "sent") {
+      $("caseCard").innerHTML = `<h2>送信済み（${esc(caseLabel(c))}）</h2>`
+        + '<div class="sent-head"><button type="button" id="caseLoadSent" class="ghost small">Dropboxから更新</button><span id="caseSentState" class="muted small"></span></div>'
+        + '<p class="muted small">この案件について送ったメモです。新しい順。「未整理」はClaudeの整理待ち、「整理済み」は案件カードに反映済みです。</p>'
+        + '<div id="caseSentList"></div>';
+      $("caseLoadSent").addEventListener("click", loadRemoteSent);
+      fillSentList($("caseSentList"), sentRows(c.id), false);
+    } else if (caseSub === "card") {
       const card = store.get("md:case:" + c.id, null);
       $("caseCard").innerHTML = card ? md(card) + syncNote()
         : `<h1>${esc(caseLabel(c))}</h1><p class="muted">まだ案件カードがありません。メモを送ると、次回の定時処理でClaudeが作成します。</p>`;
