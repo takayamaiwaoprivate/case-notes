@@ -234,6 +234,20 @@
     for (const key of qs) answeredAsks.push({ key, caseId, at: Date.now() });
     store.set("answeredAsks", answeredAsks);
   }
+  // 受信箱にある「確認待ちへの回答」（どの端末から送ったものでも）を読み、答えた質問を覚える
+  async function learnAnswersFromInbox() {
+    const files = (await dbxList(INBOX)).filter((e) => e[".tag"] === "file" && /\.txt$/.test(e.name));
+    const seen = new Set(store.get("inboxAnswerSeen", []));
+    for (const e of files) {
+      if (seen.has(e.name)) continue;
+      const t = await dbxDownload(e.path_display);
+      seen.add(e.name);
+      if (!t) continue;
+      const { head, body } = parseMemo(t);
+      if ((head["種類"] || "") === ANSWER_TYPE) rememberAnswers(head["案件"] || null, body);
+    }
+    store.set("inboxAnswerSeen", [...seen].slice(-300));
+  }
   function openAnswer(id, question) {
     if (!findCase(id)) return;
     if (current !== id) selectCase(id);
@@ -627,6 +641,8 @@
       }
       try { await syncHidden(); } catch (e) { problems.add("非表示の設定（" + reason(e) + "）"); }
       try { await syncAcks(); } catch (e) { problems.add("確認済みの記録（" + reason(e) + "）"); }
+      // 別の端末で答えた確認待ちも、この端末で消す（受信箱にある未整理の回答を読む）
+      try { await learnAnswersFromInbox(); } catch {}
       renderCases();
       if (current) selectCase(current);
       // 1つ失敗しても残りは読み込む
@@ -963,6 +979,13 @@
     window.addEventListener("online", () => { setNet(); flushOutbox(); });
     window.addEventListener("offline", setNet);
     window.addEventListener("pagehide", saveDraft);
+    // 開いたままの画面が古くならないように、画面に戻ったとき（前の同期から10分以上たっていれば）と30分ごとに同期する
+    const autoSync = () => {
+      if (document.hidden || !navigator.onLine || !store.get("auth", null) || $("sync").disabled) return;
+      if (Date.now() - (store.get("lastSync", 0) || 0) >= 10 * 60e3) sync();
+    };
+    document.addEventListener("visibilitychange", autoSync);
+    setInterval(autoSync, 30 * 60e3);
 
     setNet();
     try { await finishAuth(); } catch {}
