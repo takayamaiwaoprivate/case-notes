@@ -280,6 +280,8 @@
       if (section.includes("お知らせ")) continue;
       const text = el.textContent;
       if (!text.includes("【要確認】") && !(!fixedId && section.includes("今日の確認"))) continue;
+      // 定時整理が「（回答済み）」と書いた行は、受け取った記録なので回答ボタンを付けない（先生の希望、2026-11-27）
+      if (/[（(]回答済み[）)]/.test(text)) { el.classList.add("answered-row"); continue; }
       const id = fixedId || findCaseIdIn(text);
       if (!id || id === GENERAL.id) continue;
       if (isAnswered(text, id)) { el.remove(); continue; }
