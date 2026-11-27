@@ -157,8 +157,13 @@
     return doneTasks.some((d) => d.key === k || (caseId && d.caseId === caseId &&
       ((d.key.length >= 4 && k.includes(d.key)) || (k.length >= 4 && d.key.includes(k)))));
   };
+  const reloadDone = () => {
+    const keys = new Set(doneTasks.map((d) => d.key));
+    doneTasks = doneTasks.concat(store.get("doneTasks", []).filter((d) => d && d.key && !keys.has(d.key) && Date.now() - d.at < 60 * 864e5));
+  };
   async function markDone(caseId, text) {
     const key = taskKey(text);
+    reloadDone();
     if (!key || isDone(key)) return;
     doneTasks.push({ key, caseId, at: Date.now() });
     store.set("doneTasks", doneTasks);
@@ -221,18 +226,37 @@
   const ANSWER_TYPE = "期限・起案時間の回答";
   // 回答を送った確認待ちは、この端末ですぐ画面から消す（定時整理で確認待ちから外れるまでの間）。7日で忘れる
   const askKey = (s) => taskKey(String(s).replace(/^\s*[-*]\s+/, "").replace(/【要確認】/g, ""));
-  let answeredAsks = store.get("answeredAsks", []).filter((d) => Date.now() - d.at < 7 * 864e5);
+  // 同じ端末でアプリを2つの窓（タブ）で開いていても食い違わないよう、記録はいつも端末の保存から読み直す（2026-11-27）
+  const freshAnswers = (a) => (Array.isArray(a) ? a : []).filter((d) => d && d.key && Date.now() - d.at < 7 * 864e5);
+  let answeredAsks = freshAnswers(store.get("answeredAsks", []));
+  const reloadAnswered = () => {
+    const seen = new Set(answeredAsks.map((d) => d.caseId + "\n" + d.key));
+    answeredAsks = freshAnswers(answeredAsks.concat(freshAnswers(store.get("answeredAsks", [])).filter((d) => !seen.has(d.caseId + "\n" + d.key))));
+  };
+  // 全角・半角、空白、句読点の違いでは別の質問にしない
+  const askNorm = (s) => String(s).normalize("NFKC").replace(/[\s。、．，.,]/g, "");
   const isAnswered = (text, caseId) => {
-    const k = askKey(text);
+    const k = askNorm(askKey(text));
     if (!k) return false;
-    return answeredAsks.some((d) => d.key === k || ((!caseId || !d.caseId || d.caseId === caseId) &&
-      ((d.key.length >= 6 && k.includes(d.key)) || (k.length >= 6 && d.key.includes(k)))));
+    return answeredAsks.some((d) => {
+      const dk = askNorm(d.key);
+      return dk === k || ((!caseId || !d.caseId || d.caseId === caseId) &&
+        ((dk.length >= 6 && k.includes(dk)) || (k.length >= 6 && dk.includes(k))));
+    });
   };
   function rememberAnswers(caseId, body) {
-    const qs = [...body.matchAll(/（質問）(.+)/g)].map((m) => askKey(m[1])).filter(Boolean);
+    const qs = [...String(body).matchAll(/[（(]質問[）)]\s*(.+)/g)].map((m) => askKey(m[1])).filter(Boolean);
     if (!qs.length) return;
-    for (const key of qs) answeredAsks.push({ key, caseId, at: Date.now() });
+    reloadAnswered();
+    for (const key of qs) if (!answeredAsks.some((d) => d.key === key && d.caseId === caseId)) answeredAsks.push({ key, caseId, at: Date.now() });
     store.set("answeredAsks", answeredAsks);
+  }
+  // この端末から送った回答の控えからも覚え直す（保存がうまくいかなかったときの備え）
+  function learnAnswersFromSent() {
+    for (const l of sentLog) {
+      if (l.type !== ANSWER_TYPE || !l.body || Date.now() - new Date(l.at).getTime() > 7 * 864e5) continue;
+      rememberAnswers(l.caseId, l.body);
+    }
   }
   // 受信箱にある「確認待ちへの回答」（どの端末から送ったものでも）を読み、答えた質問を覚える
   async function learnAnswersFromInbox() {
@@ -643,6 +667,7 @@
       try { await syncHidden(); } catch (e) { problems.add("非表示の設定（" + reason(e) + "）"); }
       try { await syncAcks(); } catch (e) { problems.add("確認済みの記録（" + reason(e) + "）"); }
       // 別の端末で答えた確認待ちも、この端末で消す（受信箱にある未整理の回答を読む）
+      reloadAnswered(); reloadDone();
       try { await learnAnswersFromInbox(); } catch {}
       renderCases();
       if (current) selectCase(current);
@@ -1115,10 +1140,23 @@
       if (Date.now() - (store.get("lastSync", 0) || 0) >= 10 * 60e3) sync();
     };
     document.addEventListener("visibilitychange", autoSync);
+    // 別の窓（タブ）で回答・済にしたら、この窓の表示もすぐ直す
+    window.addEventListener("storage", (e) => {
+      if (e.key !== "cn:answeredAsks" && e.key !== "cn:doneTasks") return;
+      reloadAnswered(); reloadDone();
+      renderCases(); renderDashboard(); renderCaseCard(); renderTasks();
+    });
+    // 窓に戻ったときも、同期の有無にかかわらず回答・済の記録を読み直して表示を直す
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) return;
+      reloadAnswered(); reloadDone();
+      renderCases(); renderDashboard(); renderCaseCard(); renderTasks();
+    });
     setInterval(autoSync, 30 * 60e3);
 
     setNet();
     try { await finishAuth(); } catch {}
+    learnAnswersFromSent();
     renderCases(); renderDashboard(); renderOutbox();
     if (current) selectCase(current);
     showView(store.get("view", "input"));
