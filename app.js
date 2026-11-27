@@ -773,7 +773,8 @@
   const ackKey = (el) => normAckKey(taskKey(el.textContent.replace(/(了解|確認|戻す)$/, "")));
   const isAcked = (storeKey, key) => ackLists[storeKey].some((d) => d.key === key && !d.off);
   function setAck(storeKey, key, on) {
-    ackLists[storeKey] = ackLists[storeKey].filter((d) => d.key !== key).concat({ key, at: Date.now(), ...(on ? {} : { off: true }) });
+    const keys = [].concat(key); // まとめて確認するときは複数
+    ackLists[storeKey] = ackLists[storeKey].filter((d) => !keys.includes(d.key)).concat(keys.map((k) => ({ key: k, at: Date.now(), ...(on ? {} : { off: true }) })));
     store.set(storeKey, ackLists[storeKey]);
     ackDirty = true; store.set("ackDirty", true);
     renderDashboard();
@@ -832,6 +833,16 @@
           b.addEventListener("click", (e) => { e.stopPropagation(); setAck(kind.store, key, true); });
         }
         li.append(" ", b);
+      }
+      // まだ確認していない行が2件以上あれば、見出しの横に「すべて確認」を置く（1件ずつ押さなくてよいように。先生の希望、2026-11-27）
+      const open = lis.filter((li) => !li.classList.contains("acked") && !isNoneRow(li.textContent)).map(ackKey);
+      if (open.length >= 2) {
+        const all = document.createElement("button");
+        all.type = "button"; all.className = "done-btn ack-btn ack-all";
+        all.textContent = `すべて${kind.verb}（${open.length}件）`;
+        all.title = `この欄の${open.length}件をまとめて${kind.verb}済みにする（消えません。「${kind.done}を表示」で見られます）`;
+        all.addEventListener("click", () => setAck(kind.store, open, true));
+        h.after(all);
       }
       if (nAck) {
         const t = document.createElement("button");
