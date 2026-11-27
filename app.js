@@ -776,6 +776,31 @@
       return l.replace(COURT_DATE, (m) => `**${m}**`);
     }).join("\n");
   }
+  // 案件カードの箇条書きで、日付（2026-12-10 など）から始まる行を時系列（古い順、同じ日は時刻順）に並べる（先生の希望、2026-11-27）。
+  // 日付のない行（補足など）はその位置に残し、字下げした行は上の行と一緒に動かす。
+  const DATE_HEAD = /^[-*]\s+(?:\[[ xX]\]\s+)?(?:\*\*|~~)?(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[（(][^）)]*[）)])?\s*(?:(\d{1,2}):(\d{2}))?/;
+  function dateKey(l) {
+    const m = l.match(DATE_HEAD);
+    if (!m) return null;
+    const p = (x, n) => String(x || 0).padStart(n, "0");
+    return p(m[1], 4) + p(m[2], 2) + p(m[3], 2) + (m[4] == null ? "9999" : p(m[4], 2) + p(m[5], 2));
+  }
+  function sortDatedLists(src) {
+    const lines = src.replace(/\r/g, "").split("\n"), out = [];
+    let i = 0;
+    while (i < lines.length) {
+      if (!/^[-*]\s/.test(lines[i])) { out.push(lines[i++]); continue; }
+      const groups = [];
+      while (i < lines.length && (/^[-*]\s/.test(lines[i]) || (groups.length && /^\s+\S/.test(lines[i])))) {
+        if (/^[-*]\s/.test(lines[i])) groups.push({ key: dateKey(lines[i]), lines: [] });
+        groups[groups.length - 1].lines.push(lines[i++]);
+      }
+      const dated = groups.filter((g) => g.key).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+      let k = 0;
+      for (const g of groups) out.push(...(g.key ? dated[k++] : g).lines);
+    }
+    return out.join("\n");
+  }
   // 終了（非表示）にした案件の行をダッシュボードから省く。
   // 定時整理の前に非表示にした案件も、その場で消えるようにアプリ側でも省く。見出しは残す。
   function dropHiddenCases(src) {
@@ -975,7 +1000,7 @@
       fillSentList($("caseSentList"), sentRows(c.id), false);
     } else if (caseSub === "card") {
       const card = store.get("md:case:" + c.id, null);
-      $("caseCard").innerHTML = card ? md(card) + syncNote()
+      $("caseCard").innerHTML = card ? md(sortDatedLists(card)) + syncNote()
         : `<h1>${esc(caseLabel(c))}</h1><p class="muted">まだ案件カードがありません。メモを送ると、次回の定時処理でClaudeが作成します。</p>`;
       linkAsks($("caseCard"), c.id);
       addDoneButtons($("caseCard"), c.id);
